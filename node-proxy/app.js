@@ -267,6 +267,13 @@ proxyRouter.all('/api/fs/list', bodyparserMw, async (ctx, next) => {
     // 这里要注意闭包问题，mad
     // logger.debug('@@cacheFileInfo', fileInfo.path)
     cacheFileInfo(fileInfo)
+    // aliyun images thumb
+    if(fileInfo.thumb.indexOf('https://cn-beijing-data.aliyundrive.net') > -1 &&
+      fileInfo.name.indexOf('.mp4') == -1){
+      // logger.info('@@@thumb',fileInfo.thumb)
+      // logger.info('@@@origin',ctx.req.origin)
+      fileInfo.thumb = ctx.req.origin + '/d' + fileInfo.path + '?sign=' + fileInfo.sign
+    }
   }
   // waiting cacheFileInfo a moment
   if (content.length > 100) {

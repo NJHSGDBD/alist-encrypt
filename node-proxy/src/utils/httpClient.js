@@ -65,7 +65,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
           resolve()
         })
         .on('close', () => {
-          console.log('响应关闭...', reqId, urlAddr)
+          console.log('@远程响应关闭...', reqId, urlAddr)
           // response.destroy()
           if (decryptTransform) decryptTransform.destroy()
         })
@@ -79,7 +79,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
     encryptTransform ? request.pipe(encryptTransform).pipe(httpReq) : request.pipe(httpReq)
     // 重定向的请求 关闭时 关闭被重定向的请求
     response.on('close', () => {
-      console.log('响应关闭...', reqId, url)
+      console.log('@本地响应关闭...', reqId, url)
       httpReq.destroy()
     })
   })

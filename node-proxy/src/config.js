@@ -14,8 +14,8 @@ if (!fs.existsSync(getConfPath())) {
 }
 // 从环境变量上读取配置信息，docker首次启动时候可以直接进行配置
 const serverAddr = process.env.ALIST_HOST
-const serverHost = '192.168.1.100'
-const serverPort = 5244
+let serverHost = '192.168.1.100'
+let serverPort = 5244
 if (serverAddr && serverAddr.indexOf(':') > 6) {
   serverHost = serverAddr.split(':')[0]
   serverPort = serverAddr.split(':')[1]

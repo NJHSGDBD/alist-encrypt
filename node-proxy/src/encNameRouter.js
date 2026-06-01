@@ -29,6 +29,7 @@ encNameRouter.all('/api/fs/list', async (ctx, next) => {
     for (let i = 0; i < content.length; i++) {
       const fileInfo = content[i]
       if (fileInfo.is_dir) {
+        // TODO,这里应该要处理一下，加密文件夹
         continue
       }
       //  Check path if the file name needs to be encrypted
@@ -207,13 +208,12 @@ encNameRouter.all('/api/fs/rename', bodyparserMw, async (ctx, next) => {
   const respBody = await httpClient(ctx.req)
   ctx.body = respBody
 })
-
+// 替换字符，http://alist.com/p/enc123.txt?sign=12.. 替换 http://alist.com/p/realname.txt?sign=12..
+const regexPath = /\/([^\\/]*?)(\?|$)/
 const handleDownload = async (ctx, next) => {
   const request = ctx.req
   const { webdavConfig } = ctx.req
-
-  const urlPath = ctx.req.url.split('?')[0]
-  let filePath = urlPath
+  let filePath = ctx.req.url.split('?')[0]
   // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
   request.fileSize = 0
   // 这里需要处理掉/p 路径
@@ -228,12 +228,13 @@ const handleDownload = async (ctx, next) => {
   if (passwdInfo && passwdInfo.encName) {
     // reset content-length length
     delete ctx.req.headers['content-length']
-    // check fileName is not enc or it is dir
+    // Check whether the file name refers to an encrypted file or a directory
     const fileName = path.basename(filePath)
     const realName = convertRealName(passwdInfo.password, passwdInfo.encType, fileName)
-    ctx.req.url = path.dirname(ctx.req.url) + '/' + realName
-    ctx.req.urlAddr = path.dirname(ctx.req.urlAddr) + '/' + realName
-    logger.debug('@@@@download-fileName', ctx.req.url, fileName, realName)
+    // Replace the real-name before downloading
+    ctx.req.url = ctx.req.url.replace(regexPath, `/${realName}$2`)
+    ctx.req.urlAddr = ctx.req.urlAddr.replace(regexPath, `/${realName}$2`)
+    logger.debug('@@download-fileName', ctx.req.url, fileName, realName)
     await next()
     return
   }

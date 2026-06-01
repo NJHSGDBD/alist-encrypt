@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev -r tsconfig-paths/register app.js",
     "serve": "ts-node -r tsconfig-paths/register app.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "ts-node-dev -r tsconfig-paths/register btest.js",
     "webpack": "npx webpack",
     "build": "npm run webpack && pkg --compress GZip dist",
     "docker": "npm run webpack && sudo docker build -t prophet310/alist-encrypt:beta . ",

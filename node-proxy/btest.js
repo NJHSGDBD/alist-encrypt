@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { pathToRegexp } from 'path-to-regexp'
 import path from 'path'
 import { logger } from '@/common/logger'
 import ChaCha20Poly from '@/utils/chaCha20Poly'
@@ -18,7 +19,6 @@ getWebdavFileInfo(
 console.log('@@dd', path.isAbsolute('/ddf'))
 const content = 'fileInfoTable_/dav/aliyun%Evfnnz%BA%91%E7%9B%98/atest/12%E5%A4%A7%E5%A4%B4%E7%9A%84%E6%97%8F%E6%96%87%E4%BB%B6_8Xn78oZjs7VSr~qjdzVH4/4'
 
-console.log('@@content', decodeURIComponent(content))
 const reg = 'test'
 
 const enw = content.replace(new RegExp(reg, 'g'), '@@')
@@ -32,3 +32,28 @@ const decname = decodeName('123456', 'aesctr', encname)
 console.log('##', ext, decname)
 
 logger.debug('dfeeeef')
+
+const path2 = "/var/test/abc/test/fold";
+
+// 匹配 test/ 后面的所有内容（你要的就是这个）
+const regex = "(test/.*)";
+const match = path2.match(new RegExp(regex));
+
+const result = match ? match[1] : null;
+console.log('@@',result); // 输出：abc/test/fold
+
+// 判断是否为匹配的路径
+ function pathExec(encPath, url) {
+  for (const filePath of encPath) {
+    const result = pathToRegexp(new RegExp(filePath)).exec(url)
+    if (result) {
+      console.log('@@@res', result)
+      return result
+    }
+  }
+  return null
+}
+
+const d= pathExec(['test/.*', 'abc/.*'], '/adfadf/testd/test/abc/fdf')
+
+// 输出：https://xxx.com/新内容?a=1&b=2

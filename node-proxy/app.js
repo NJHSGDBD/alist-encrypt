@@ -133,7 +133,7 @@ async function proxyHandle(ctx, next) {
   const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
   // 检查路径是否满足加密要求，要拦截的路径可能有中文
   const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
-  logger.debug('@@@@passwdInfo', pathInfo)
+  console.log('@@passwdInfo', pathInfo)
   // fix webdav move file
   if (request.method.toLocaleUpperCase() === 'MOVE' && headers.destination) {
     let destination = headers.destination
@@ -167,19 +167,17 @@ async function proxyHandle(ctx, next) {
       filePath = filePath.replace('/d/', '/')
     }
     // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
-    let fileInfo = await getFileInfo(filePath);
+    let fileInfo = await getFileInfo(filePath)
 
     if (fileInfo === null) {
-      const rawFileName = decodeURIComponent(path.basename(filePath));
-      const ext = path.extname(rawFileName);
-      const encodedRawFileName = encodeURIComponent(rawFileName);
-      const encFileName = encodeName(passwdInfo.password, passwdInfo.encType, rawFileName);
-      const newFileName = encFileName + ext;
-    
-      filePath = filePath.replace(encodedRawFileName, newFileName);
-      request.urlAddr = request.urlAddr.replace(encodedRawFileName, newFileName);
-    
-      fileInfo = await getFileInfo(filePath);
+      const rawFileName = decodeURIComponent(path.basename(filePath))
+      const ext = path.extname(rawFileName)
+      const encodedRawFileName = encodeURIComponent(rawFileName)
+      const encFileName = encodeName(passwdInfo.password, passwdInfo.encType, rawFileName)
+      const newFileName = encFileName + ext
+      filePath = filePath.replace(encodedRawFileName, newFileName)
+      request.urlAddr = request.urlAddr.replace(encodedRawFileName, newFileName)
+      fileInfo = await getFileInfo(filePath)
     }
     logger.info('@@getFileInfo:', filePath, fileInfo, request.urlAddr)
     if (fileInfo) {
@@ -237,57 +235,24 @@ proxyRouter.get(/^\/p\/*/, proxyHandle)
 
 // 处理在线视频播放的问题，修改它的返回播放地址 为本代理的地址。
 proxyRouter.all('/api/fs/get', bodyparserMw, async (ctx, next) => {
-  const { path } = ctx.request.body
+  const { path: filePath } = ctx.request.body
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
 
   const respBody = await httpClient(ctx.req)
   const result = JSON.parse(respBody)
   const { headers } = ctx.req
-  const { passwdInfo } = pathFindPasswd(alistServer.passwdList, path)
-
+  const { passwdInfo } = pathFindPasswd(alistServer.passwdList, filePath)
   if (passwdInfo) {
     // 修改返回的响应，匹配到要解密，就302跳转到本服务上进行代理流量
-    logger.info('@@getFile ', path, ctx.req.reqBody, result)
+    logger.info('@@getFile ', filePath, ctx.req.reqBody, result)
     const key = crypto.randomUUID()
     await levelDB.setExpire(key, { redirectUrl: result.data.raw_url, passwdInfo, fileSize: result.data.size }, 60 * 60 * 72) // 缓存起来，默认3天，足够下载和观看了
     result.data.raw_url = `${
       headers.origin || (headers['x-forwarded-proto'] || ctx.protocol) + '://' + ctx.req.selfHost
-    }/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(path)}`
+    }/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(filePath)}`
     if (result.data.provider === 'AliyundriveOpen') result.data.provider = 'Local'
   }
-  ctx.body = result
-})
-
-// 缓存alist的文件信息
-proxyRouter.all('/api/fs/list', bodyparserMw, async (ctx, next) => {
-  const { path } = ctx.request.body
-  // 判断打开的文件是否要解密，要解密则替换url，否则透传
-  ctx.req.reqBody = JSON.stringify(ctx.request.body)
-  const respBody = await httpClient(ctx.req)
-  // logger.info('@@@respBody', respBody)
-  const result = JSON.parse(respBody)
-  if (!result.data) {
-    ctx.body = result
-    return
-  }
-  const content = result.data.content
-  if (!content) {
-    ctx.body = result
-    return
-  }
-  for (let i = 0; i < content.length; i++) {
-    const fileInfo = content[i]
-    fileInfo.path = path + '/' + fileInfo.name
-    // 这里要注意闭包问题，mad
-    // logger.debug('@@cacheFileInfo', fileInfo.path)
-    cacheFileInfo(fileInfo)
-  }
-  // waiting cacheFileInfo a moment
-  if (content.length > 100) {
-    await sleep(50)
-  }
-  logger.info('@@@fs/list', content.length)
   ctx.body = result
 })
 

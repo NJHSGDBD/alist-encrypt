@@ -65,6 +65,11 @@ const handle = async (ctx, next) => {
   const request = ctx.req
   const { passwdList } = request.webdavConfig
   const { passwdInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
+  // 创建目录
+  if (ctx.method.toLocaleUpperCase() === 'MKCOL' && passwdInfo && passwdInfo.encName) {
+    // 对名字进行加密, TODO
+    console.log('@@method', request.body, request.url)
+  }
   if (ctx.method.toLocaleUpperCase() === 'PROPFIND' && passwdInfo && passwdInfo.encName) {
     // check dir, convert url
     const url = request.url
@@ -150,7 +155,7 @@ const handle = async (ctx, next) => {
     // maybe from aliyundrive, check this req url while get file list from enc folder
     if (url.endsWith('/') && 'GET,DELETE'.includes(request.method.toLocaleUpperCase())) {
       let respBody = await httpClient(ctx.req, ctx.res)
-      if(request.method.toLocaleUpperCase() === 'GET'){
+      if (request.method.toLocaleUpperCase() === 'GET') {
         const aurlArr = respBody.match(/href="[^"]*"/g)
         // logger.debug('@@aurlArr', aurlArr)
         if (aurlArr && aurlArr.length) {

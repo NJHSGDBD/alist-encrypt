@@ -77,12 +77,12 @@ export function decodeName(password: string, encType: string, encodeName: string
   return decodeStr
 }
 
-export function encodeFolderName(password: string, encType: string, folderPasswd: string, folderEncType: string) {
+export function encodeFromFolder(password: string, encType: string, folderPasswd: string, folderEncType: string) {
   const passwdInfo = folderEncType + '_' + folderPasswd
   return encodeName(password, encType, passwdInfo)
 }
 
-export function decodeFolderName(password: string, encType: string, encodeName: string) {
+export function decodeFromFolder(password: string, encType: string, encodeName: string) {
   const arr = encodeName.split('_')
   if (arr.length < 2) {
     return false
@@ -107,13 +107,15 @@ export function pathFindPasswd(passwdList: PasswdInfo[], url: string) {
         // getPassInfo()
         const newPasswdInfo = Object.assign({}, passwdInfo)
         // url maybe a folder, need decode
-        const folders = url.split('/')
-        for (const folderName of folders) {
-          const data = decodeFolderName(passwdInfo.password, passwdInfo.encType, decodeURIComponent(folderName))
-          if (data) {
-            newPasswdInfo.encType = data.folderEncType
-            newPasswdInfo.password = data.folderPasswd
-            return { passwdInfo: newPasswdInfo, pathInfo: result }
+        if (!passwdInfo.encFolder) {
+          const folders = url.split('/')
+          for (const folderName of folders) {
+            const data = decodeFromFolder(passwdInfo.password, passwdInfo.encType, decodeURIComponent(folderName))
+            if (data) {
+              newPasswdInfo.encType = data.folderEncType
+              newPasswdInfo.password = data.folderPasswd
+              return { passwdInfo: newPasswdInfo, pathInfo: result }
+            }
           }
         }
         return { passwdInfo, pathInfo: result }

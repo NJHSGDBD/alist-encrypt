@@ -37,7 +37,7 @@ export function convertShowName(password, encType, pathText) {
 export function convertRealPath(passwdList, fpath) {
   let foldPath = fpath
   const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, foldPath)
-  if (passwdInfo && passwdInfo.encFoldPath) {
+  if (passwdInfo && passwdInfo.encFolder) {
     // 尝试解密路径，去掉第一个目录
     const foldNames = pathInfo[0].split('/')
     foldNames.shift()
@@ -47,6 +47,7 @@ export function convertRealPath(passwdList, fpath) {
       const realFoldName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
       encFoldPath += '/' + name
       realFoldPath += '/' + realFoldName
+      console.log('@@@realFoldName', name, realFoldName)
     }
     foldPath = foldPath.replace(encFoldPath, realFoldPath)
   }

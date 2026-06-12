@@ -10,7 +10,7 @@ if (arg.length > 1) {
 import Koa from 'koa'
 import Router from 'koa-router'
 import http from 'http'
-import crypto from 'crypto'
+
 import path from 'path'
 import { httpProxy, httpClient } from '@/utils/httpClient'
 import bodyparser from 'koa-bodyparser'
@@ -232,29 +232,6 @@ proxyRouter.use(encNameRouter.routes()).use(encNameRouter.allowedMethods())
 proxyRouter.get(/^\/d\/*/, proxyHandle)
 // 文件直接下载
 proxyRouter.get(/^\/p\/*/, proxyHandle)
-
-// 处理在线视频播放的问题，修改它的返回播放地址 为本代理的地址。
-proxyRouter.all('/api/fs/get', bodyparserMw, async (ctx, next) => {
-  const { path: filePath } = ctx.request.body
-  // 判断打开的文件是否要解密，要解密则替换url，否则透传
-  ctx.req.reqBody = JSON.stringify(ctx.request.body)
-
-  const respBody = await httpClient(ctx.req)
-  const result = JSON.parse(respBody)
-  const { headers } = ctx.req
-  const { passwdInfo } = pathFindPasswd(alistServer.passwdList, filePath)
-  if (passwdInfo) {
-    // 修改返回的响应，匹配到要解密，就302跳转到本服务上进行代理流量
-    logger.info('@@getFile ', filePath, ctx.req.reqBody, result)
-    const key = crypto.randomUUID()
-    await levelDB.setExpire(key, { redirectUrl: result.data.raw_url, passwdInfo, fileSize: result.data.size }, 60 * 60 * 72) // 缓存起来，默认3天，足够下载和观看了
-    result.data.raw_url = `${
-      headers.origin || (headers['x-forwarded-proto'] || ctx.protocol) + '://' + ctx.req.selfHost
-    }/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(filePath)}`
-    if (result.data.provider === 'AliyundriveOpen') result.data.provider = 'Local'
-  }
-  ctx.body = result
-})
 
 // that is not work when upload txt file if enable encName
 proxyRouter.put('/api/fs/put-back', async (ctx, next) => {

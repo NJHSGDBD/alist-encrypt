@@ -2,7 +2,7 @@
 
 import Router from 'koa-router'
 import bodyparser from 'koa-bodyparser'
-import { encodeName, pathFindPasswd, convertShowName, convertRealName, decodeName } from './utils/commonUtil'
+import { encodeName, pathFindPasswd, convertShowName, convertRealName, convertRealPath } from './utils/commonUtil'
 import path from 'path'
 import { httpClient, httpProxy } from './utils/httpClient'
 import FlowEnc from './utils/flowEnc'
@@ -23,26 +23,22 @@ const bodyparserMw = bodyparser({ enableTypes: ['json', 'form', 'text'] })
 const encNameRouter = new Router()
 const origPrefix = 'orig_'
 
-// 缓存alist的文件信息
+// 针对路径加密处理
 const decodeFsListPath = async (ctx, next) => {
-  let { path: foldPath } = ctx.request.body
-  const { passwdInfo, pathInfo } = pathFindPasswd(ctx.req.webdavConfig.passwdList, decodeURI(foldPath))
-  if (passwdInfo) {
-    // 尝试解密路径，去掉第一个目录
-    const foldNames = pathInfo[0].split('/')
-    foldNames.shift()
-    for (let name of foldNames) {
-      const showName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
-      foldPath = foldPath.replace(name, showName)
-    }
-  }
-  ctx.request.body.path = foldPath
-  logger.info('@@foldPath', ctx.request.body.path)
+  const { name, dir, names } = ctx.request.body
+  logger.info('@@foldPath', ctx.request.body.name)
   await next()
 }
+
+// 如果目录加密了，先把名字恢复到 realName
+encNameRouter.all(/^\/api\/fs\/*/, bodyparserMw, decodeFsListPath)
+
 // 缓存alist的文件信息
 const cacheFileInfoList = async (ctx, next) => {
-  const { path } = ctx.request.body
+  const { path: foldPath } = ctx.request.body
+  const realfoldPath = convertRealPath(ctx.req.webdavConfig.passwdList, foldPath)
+  ctx.request.body.path = realfoldPath
+
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
   logger.info('@@fs/reqBody', ctx.req.reqBody)
@@ -61,9 +57,9 @@ const cacheFileInfoList = async (ctx, next) => {
   }
   for (let i = 0; i < content.length; i++) {
     const fileInfo = content[i]
-    fileInfo.path = path + '/' + fileInfo.name
+    fileInfo.path = realfoldPath + '/' + fileInfo.name
     // 这里要注意闭包问题，mad
-    // logger.debug('@@cacheFileInfo', fileInfo.path)
+    logger.debug('@@cacheFileInfo', fileInfo.path)
     cacheFileInfo(fileInfo)
   }
   // waiting cacheFileInfo a moment
@@ -124,7 +120,7 @@ const decryptFileList = async (ctx, next) => {
 }
 
 // 拦截/api/fs/list
-encNameRouter.all('/api/fs/list', bodyparserMw, decodeFsListPath, cacheFileInfoList, decryptFileList)
+encNameRouter.all('/api/fs/list', bodyparserMw, cacheFileInfoList, decryptFileList)
 
 // 处理网页上传文件
 encNameRouter.put('/api/fs/put', async (ctx, next) => {
@@ -133,10 +129,17 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
   const contentLength = headers['content-length'] || 0
   request.fileSize = contentLength * 1
 
-  const uploadPath = headers['file-path'] ? decodeURIComponent(headers['file-path']) : '/-'
-  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, uploadPath)
+  let uploadPath = headers['file-path'] ? decodeURIComponent(headers['file-path']) : '/-'
+  const { passwdInfo, pathInfo } = pathFindPasswd(webdavConfig.passwdList, uploadPath)
   if (passwdInfo) {
     const fileName = path.basename(uploadPath)
+    // 尝试解密路径，去掉第一个目录
+    const foldNames = pathInfo[0].split('/')
+    foldNames.shift()
+    for (let name of foldNames) {
+      const realame = convertRealName(passwdInfo.password, passwdInfo.encType, name)
+      uploadPath = uploadPath.replace(name, realame)
+    }
     // you can custom Suffix
     if (passwdInfo.encName) {
       const ext = passwdInfo.encSuffix || path.extname(fileName)
@@ -153,16 +156,15 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
 
 // remove
 encNameRouter.all('/api/fs/remove', bodyparserMw, async (ctx, next) => {
-  const { dir, names } = ctx.request.body
+  const { dir: folderPath, names } = ctx.request.body
+  const dir = convertRealPath(ctx.req.webdavConfig.passwdList, folderPath)
   const { webdavConfig } = ctx.req
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, dir)
   // maybe a folder，remove anyway the name
   const fileNames = Object.assign([], names)
   if (passwdInfo && passwdInfo.encName) {
-    for (const name of names) {
-      // is not enc name
-      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
-      fileNames.push(realName)
+    for (let i = 0; i < names.length; i++) {
+      fileNames[i] = convertRealName(passwdInfo.password, passwdInfo.encType, names[i])
     }
   }
   const reqBody = { dir, names: fileNames }
@@ -211,19 +213,12 @@ encNameRouter.all('/api/fs/move', bodyparserMw, copyOrMoveFile)
 encNameRouter.all('/api/fs/copy', bodyparserMw, copyOrMoveFile)
 
 encNameRouter.all('/api/fs/get', bodyparserMw, async (ctx, next) => {
-  const { path: filePath } = ctx.request.body
+  let { path: filePath } = ctx.request.body
   const { webdavConfig } = ctx.req
-  const { passwdInfo, pathInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
+  const foldRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(filePath))
 
+  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
   if (passwdInfo && passwdInfo.encName) {
-    let foldRealPath = path.dirname(filePath)
-    // 尝试解密路径，去掉第一个目录
-    const foldNames = pathInfo[0].split('/')
-    foldNames.shift()
-    for (let name of foldNames) {
-      const showName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
-      foldRealPath = foldRealPath.replace(name, showName)
-    }
     // reset content-length length
     delete ctx.req.headers['content-length']
     // check fileName is not enc
@@ -248,10 +243,15 @@ encNameRouter.all('/api/fs/get', bodyparserMw, async (ctx, next) => {
 })
 
 encNameRouter.all('/api/fs/rename', bodyparserMw, async (ctx, next) => {
-  const { path: filePath, name } = ctx.request.body
+  let { path: filePath, name } = ctx.request.body
+  console.log('@@@filePath', filePath)
   const { webdavConfig } = ctx.req
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
+  const folderPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(filePath))
+  filePath = folderPath + '/' + path.basename(filePath)
+
   const reqBody = { path: filePath, name }
+  console.log('@@222reqBody', reqBody)
   ctx.req.reqBody = reqBody
   // reset content-length length
   delete ctx.req.headers['content-length']
@@ -274,7 +274,7 @@ encNameRouter.all('/api/fs/rename', bodyparserMw, async (ctx, next) => {
     reqBody.name = newName + ext
   }
   ctx.req.reqBody = reqBody
-  console.log('@@@rename', reqBody)
+  console.log('@@@rename', reqBody, fileInfo.is_dir)
   const respBody = await httpClient(ctx.req)
   ctx.body = respBody
 })
@@ -296,7 +296,6 @@ const handleDownload = async (ctx, next) => {
   }
   const { passwdInfo, pathInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
   if (passwdInfo && passwdInfo.encName) {
-    let foldRealPath = path.dirname(filePath)
     // 尝试解密路径，去掉第一个目录
     const foldNames = pathInfo[0].split('/')
     foldNames.shift()
@@ -306,7 +305,6 @@ const handleDownload = async (ctx, next) => {
       const realFoldName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
       encFoldPath += '/' + name
       realFoldPath += '/' + realFoldName
-      foldRealPath = foldRealPath.replace(name, realFoldName)
     }
     ctx.req.url = ctx.req.url.replace(encFoldPath, realFoldPath)
     ctx.req.urlAddr = ctx.req.urlAddr.replace(encFoldPath, realFoldPath)

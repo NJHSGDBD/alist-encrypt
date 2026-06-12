@@ -9,7 +9,7 @@ const crc6 = new Crcn(6)
 const origPrefix = 'orig_'
 
 // check file name, return real name
-export function convertRealName(password: string, encType: string, pathText: string) {
+export function convertRealName(password, encType, pathText) {
   const fileName = path.basename(pathText)
   if (fileName.indexOf(origPrefix) === 0) {
     return fileName.replace(origPrefix, '')
@@ -22,7 +22,7 @@ export function convertRealName(password: string, encType: string, pathText: str
 }
 
 // if file name has encrypt, return show name
-export function convertShowName(password: string, encType: string, pathText: string) {
+export function convertShowName(password, encType, pathText) {
   const fileName = path.basename(decodeURIComponent(pathText))
   const ext = path.extname(fileName)
   const encName = fileName.replace(ext, '')
@@ -34,8 +34,27 @@ export function convertShowName(password: string, encType: string, pathText: str
   return showName
 }
 
-// 判断是否为匹配的路径
-export function pathExec(encPath: string[], url: string) {
+export function convertRealPath(passwdList, fpath) {
+  let foldPath = fpath
+  const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, foldPath)
+  if (passwdInfo && passwdInfo.encFoldPath) {
+    // 尝试解密路径，去掉第一个目录
+    const foldNames = pathInfo[0].split('/')
+    foldNames.shift()
+    let encFoldPath = ''
+    let realFoldPath = ''
+    for (let name of foldNames) {
+      const realFoldName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
+      encFoldPath += '/' + name
+      realFoldPath += '/' + realFoldName
+    }
+    foldPath = foldPath.replace(encFoldPath, realFoldPath)
+  }
+  return foldPath
+}
+
+// 判断是否为匹配的路径encPath:[]
+export function pathExec(encPath, url) {
   for (const filePath of encPath) {
     const result = pathToRegexp(new RegExp(filePath)).exec(url)
     if (result) {
@@ -45,7 +64,7 @@ export function pathExec(encPath: string[], url: string) {
   return null
 }
 
-export function encodeName(password: string, encType: string, plainName: string) {
+export function encodeName(password, encType, plainName) {
   const passwdOutward = FlowEnc.getPassWdOutward(password, encType)
   //  randomStr
   const mix64 = new MixBase64(passwdOutward)
@@ -56,7 +75,7 @@ export function encodeName(password: string, encType: string, plainName: string)
   return encodeName
 }
 
-export function decodeName(password: string, encType: string, encodeName: string) {
+export function decodeName(password, encType, encodeName) {
   const crc6Check = encodeName.substring(encodeName.length - 1)
   const passwdOutward = FlowEnc.getPassWdOutward(password, encType)
   const mix64 = new MixBase64(passwdOutward)
@@ -64,6 +83,7 @@ export function decodeName(password: string, encType: string, encodeName: string
   const subEncName = encodeName.substring(0, encodeName.length - 1)
   const crc6Bit = crc6.checksum(Buffer.from(subEncName + passwdOutward))
   // console.log(subEncName, MixBase64.getSourceChar(crc6Bit), crc6Check)
+  // TODO, 校验encodeName是属于mix64的字符才可以
   if (MixBase64.getSourceChar(crc6Bit) !== crc6Check) {
     return null
   }
@@ -77,12 +97,12 @@ export function decodeName(password: string, encType: string, encodeName: string
   return decodeStr
 }
 
-export function encodeFromFolder(password: string, encType: string, folderPasswd: string, folderEncType: string) {
+export function encodeFromFolder(password, encType, folderPasswd, folderEncType) {
   const passwdInfo = folderEncType + '_' + folderPasswd
   return encodeName(password, encType, passwdInfo)
 }
 
-export function decodeFromFolder(password: string, encType: string, encodeName: string) {
+export function decodeFromFolder(password, encType, encodeName) {
   const arr = encodeName.split('_')
   if (arr.length < 2) {
     return false
@@ -98,7 +118,7 @@ export function decodeFromFolder(password: string, encType: string, encodeName: 
 }
 
 // 检查
-export function pathFindPasswd(passwdList: PasswdInfo[], url: string) {
+export function pathFindPasswd(passwdList, url) {
   for (const passwdInfo of passwdList) {
     for (const filePath of passwdInfo.encPath) {
       const result = passwdInfo.enable ? pathToRegexp(new RegExp(filePath)).exec(url) : null
@@ -123,4 +143,9 @@ export function pathFindPasswd(passwdList: PasswdInfo[], url: string) {
     }
   }
   return {}
+}
+
+function isBadText(str) {
+  // return /[ÃÂ�]/.test(str)
+  return /[ÃÂ�¤§½]/.test(str)
 }

@@ -120,13 +120,12 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
   const { headers, webdavConfig } = request
   const contentLength = headers['content-length'] || 0
   request.fileSize = contentLength * 1
-
   const uploadEncPath = headers['file-path'] ? decodeURIComponent(headers['file-path']) : '/-'
+  const fileName = path.basename(uploadEncPath)
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, uploadEncPath)
   let uploadPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(uploadEncPath))
-  uploadPath = uploadPath + '/' + path.basename(uploadEncPath)
+  uploadPath = uploadPath + '/' + fileName
   if (passwdInfo) {
-    const fileName = path.basename(uploadPath)
     // you can custom Suffix
     if (passwdInfo.encName) {
       const ext = passwdInfo.encSuffix || path.extname(fileName)
@@ -138,6 +137,7 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
     const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
     return await httpProxy(ctx.req, ctx.res, flowEnc.encryptTransform())
   }
+  // 上传完之后，应该把这个文件缓存起来，不然页面上无法立刻获取到，TODO
   return await httpProxy(ctx.req, ctx.res)
 })
 
@@ -163,42 +163,6 @@ encNameRouter.all('/api/fs/remove', bodyparserMw, async (ctx, next) => {
   ctx.body = respBody
 })
 
-const copyOrMoveFile = async (ctx, next) => {
-  const { dst_dir, src_dir, names } = ctx.request.body
-  const { webdavConfig } = ctx.req
-  const dstDir = convertRealPath(ctx.req.webdavConfig.passwdList, dst_dir)
-  const srcDir = convertRealPath(ctx.req.webdavConfig.passwdList, src_dir)
-
-  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, srcDir)
-  let fileNames = []
-  if (passwdInfo && passwdInfo.encName) {
-    logger.info('@@move encName', passwdInfo.encName)
-    for (const name of names) {
-      // is not enc name
-      if (name.indexOf(origPrefix) === 0) {
-        const origName = name.replace(origPrefix, '')
-        fileNames.push(origName)
-        continue
-      }
-      const fileName = path.basename(name)
-      // you can custom Suffix
-      const ext = passwdInfo.encSuffix || path.extname(fileName)
-      const encName = encodeName(passwdInfo.password, passwdInfo.encType, fileName)
-      const newFileName = encName + ext
-      fileNames.push(newFileName)
-    }
-  } else {
-    fileNames = Object.assign([], names)
-  }
-  const reqBody = { dst_dir: dstDir, src_dir: srcDir, names: fileNames }
-  ctx.req.reqBody = JSON.stringify(reqBody)
-  logger.info('@@move reqBody', ctx.req.reqBody)
-  // reset content-length length
-  delete ctx.req.headers['content-length']
-  const respBody = await httpClient(ctx.req)
-  ctx.body = respBody
-}
-
 // 处理目录加密
 encNameRouter.all('/api/fs/dirs', bodyparserMw, async (ctx, next) => {
   const { path: foldPath } = ctx.request.body
@@ -222,11 +186,52 @@ encNameRouter.all('/api/fs/dirs', bodyparserMw, async (ctx, next) => {
       }
     }
   }
-  logger.info('@@fs/dirs22', realfoldPath)
+  logger.info('@@fs/dirs', realfoldPath)
 })
+
+encNameRouter.all('/api/fs/mkdir', bodyparserMw, async (ctx, next) => {
+  const { path: foldPath } = ctx.request.body
+  const realfoldPath = convertRealPath(ctx.req.webdavConfig.passwdList, foldPath)
+  ctx.request.body.path = realfoldPath
+  // 判断打开的文件是否要解密，要解密则替换url，否则透传
+  ctx.req.reqBody = JSON.stringify(ctx.request.body)
+  logger.info('@@fs/dirs11', ctx.req.reqBody)
+  const respBody = await httpClient(ctx.req)
+  // logger.info('@@@respBody', respBody)
+  const result = JSON.parse(respBody)
+  ctx.body = result
+  logger.info('@@fs/mkdir', realfoldPath)
+})
+
+const copyOrMoveFile = async (ctx, next) => {
+  const { dst_dir, src_dir, names } = ctx.request.body
+  const { webdavConfig } = ctx.req
+  const dstDir = convertRealPath(ctx.req.webdavConfig.passwdList, dst_dir)
+  const srcDir = convertRealPath(ctx.req.webdavConfig.passwdList, src_dir)
+
+  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, srcDir)
+  let fileNames = []
+  if (passwdInfo && passwdInfo.encName && names) {
+    logger.info('@@move encName', passwdInfo.encName)
+    for (let i = 0; i < names.length; i++) {
+      fileNames[i] = convertRealName(passwdInfo.password, passwdInfo.encType, names[i])
+    }
+  } else {
+    fileNames = Object.assign([], names)
+  }
+  const reqBody = { dst_dir: dstDir, src_dir: srcDir, names: fileNames }
+  ctx.req.reqBody = JSON.stringify(reqBody)
+  logger.info('@@move reqBody', ctx.req.reqBody)
+  // reset content-length length
+  delete ctx.req.headers['content-length']
+  const respBody = await httpClient(ctx.req)
+  ctx.body = respBody
+}
+
 
 encNameRouter.all('/api/fs/move', bodyparserMw, copyOrMoveFile)
 encNameRouter.all('/api/fs/copy', bodyparserMw, copyOrMoveFile)
+encNameRouter.all('/api/fs/recursive_move', bodyparserMw, copyOrMoveFile)
 
 const preHandleFolderPath = async (ctx, next) => {
   // reset content-length length
@@ -282,39 +287,54 @@ encNameRouter.all('/api/fs/get', bodyparserMw, preHandleFolderPath, async (ctx, 
 
 })
 
-encNameRouter.all('/api/fs/rename', bodyparserMw, async (ctx, next) => {
+// 处理参数中是目录路径还是文件路径
+const handleFolderPath = async (ctx, next) => {
   let { path: filePath, name } = ctx.request.body
-  console.log('@@@filePath', filePath)
   const { webdavConfig } = ctx.req
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
-  const folderPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(filePath))
-  filePath = folderPath + '/' + path.basename(filePath)
-
+  if (!passwdInfo) {
+    await next()
+    return
+  }
+  if (passwdInfo.encFolder || passwdInfo.encName) {
+    // folderRealPath不管是否加密，都会自动获取到
+    const folderRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(filePath))
+    // 先尝试不加密获取文件是否存在。
+    let realFileName = path.basename(filePath)
+    let fileRealPath = folderRealPath + '/' + realFileName
+    console.log('@fileRealPath', fileRealPath)
+    let fileInfo = await getFileInfo(encodeURIComponent(fileRealPath))
+    if (!fileInfo) {
+      // 尝试使用加密的名字，realFileName可能是目录或者无后缀文件名
+      realFileName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
+      fileRealPath = folderRealPath + '/' + realFileName
+      fileInfo = await getFileInfo(encodeURIComponent(fileRealPath))
+    }
+    if (fileInfo) {
+      if (fileInfo.is_dir && passwdInfo.encFolder) {
+        // 把目录名字也加密
+        name = convertRealName(passwdInfo.password, passwdInfo.encType, name)
+      }
+      if (!fileInfo.is_dir && passwdInfo.encName) {
+        // 把目录名字也加密
+        name = convertRealName(passwdInfo.password, passwdInfo.encType, name)
+      }
+      ctx.request.body = { path: fileRealPath, name }
+      return await next()
+    }
+    logger.warn('@@rename error', filePath, name)
+  }
+  // 不加密目录，也不加密文件名
+  ctx.request.body = { path: filePath, name }
+  await next()
+}
+encNameRouter.all('/api/fs/rename', bodyparserMw, handleFolderPath, async (ctx, next) => {
+  let { path: filePath, name } = ctx.request.body
   const reqBody = { path: filePath, name }
-  console.log('@@222reqBody', reqBody)
+  console.log('@@reqBody', reqBody)
   ctx.req.reqBody = reqBody
   // reset content-length length
   delete ctx.req.headers['content-length']
-
-  let fileInfo = await getFileInfo(encodeURIComponent(filePath))
-  if (fileInfo == null && passwdInfo && passwdInfo.encName) {
-    // mabay a file
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
-    const realFilePath = path.dirname(filePath) + '/' + realName
-    fileInfo = await getFileInfo(encodeURIComponent(realFilePath))
-  }
-  if (passwdInfo && passwdInfo.encName && fileInfo && !fileInfo.is_dir) {
-    // reset content-length length
-    // you can custom Suffix
-    const ext = passwdInfo.encSuffix || path.extname(name)
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
-    const fpath = path.dirname(filePath) + '/' + realName
-    const newName = encodeName(passwdInfo.password, passwdInfo.encType, name)
-    reqBody.path = fpath
-    reqBody.name = newName + ext
-  }
-  ctx.req.reqBody = reqBody
-  console.log('@@@rename', reqBody, fileInfo.is_dir)
   const respBody = await httpClient(ctx.req)
   ctx.body = respBody
 })

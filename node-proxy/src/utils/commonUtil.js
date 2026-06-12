@@ -9,13 +9,13 @@ const crc6 = new Crcn(6)
 const origPrefix = 'orig_'
 
 // check file name, return real name
-export function convertRealName(password, encType, pathText) {
+export function convertRealName(password, encType, pathText, encSuffix) {
   const fileName = path.basename(pathText)
   if (fileName.indexOf(origPrefix) === 0) {
     return fileName.replace(origPrefix, '')
   }
   // try encode name, fileName don't need decodeURI，encodeUrl func can't encode that like '(' '!'  in nodejs
-  const ext = path.extname(fileName)
+  const ext = encSuffix || path.extname(fileName)
   const encName = encodeName(password, encType, decodeURIComponent(fileName))
   console.log('@@decodeURI(fileName)', decodeURIComponent(fileName))
   return encName + ext

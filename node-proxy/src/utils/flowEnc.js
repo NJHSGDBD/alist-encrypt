@@ -11,6 +11,7 @@ class FlowEnc {
   constructor(password, encryptType = 'chacha20', fileSize = 0) {
     fileSize *= 1
     let encryptFlow = null
+    // 这里可以优化，把cachePasswdOutward的值替换password
     if (encryptType === 'chacha20') {
       console.log('@@chacha20', encryptType)
       encryptFlow = new ChaCha20(password, fileSize)

@@ -350,6 +350,9 @@ const handleDownload = async (ctx, next) => {
   if (filePath.indexOf('/d/') === 0) {
     filePath = filePath.replace('/d/', '/')
   }
+  if (filePath.indexOf('/p/') === 0) {
+    filePath = filePath.replace('/p/', '/')
+  }
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
   const folderPath = path.dirname(filePath)
   const folderRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, folderPath)

@@ -1,4 +1,4 @@
-import levelDB from '@/utils/levelDB'
+import levelDB from '../utils/levelDB'
 import crypto from 'crypto'
 
 export const fileInfoTable = 'fileInfoTable_'
@@ -6,7 +6,9 @@ export const fileInfoTable = 'fileInfoTable_'
 // 缓存多少分钟
 const cacheTime = 60 * 24
 
-export async function initFileTable() {}
+export async function initFileTable() {
+  console.log('init db')
+}
 
 // 缓存文件信息
 export async function cacheFileInfo(fileInfo) {

@@ -1,5 +1,5 @@
 'use strict'
-import { convertFile } from '@/utils/convertFile'
+import { convertFile } from './src/utils/convertFile'
 const arg = process.argv.slice(2)
 if (arg.length > 1) {
   // convertFile command

@@ -6,8 +6,8 @@ import mkdirp from 'mkdirp'
 import FlowEnc from './flowEnc'
 import { encodeName, decodeName } from './commonUtil'
 
-export function searchFile(filePath: string) {
-  const fileArray: { size: number; filePath: string }[] = []
+export function searchFile(filePath) {
+  const fileArray = []
   const files = fs.readdirSync(filePath)
   files.forEach((child) => {
     const filePath2 = path.join(filePath, child),
@@ -24,14 +24,7 @@ export function searchFile(filePath: string) {
 }
 
 // encrypt
-export async function encryptFile(
-  password: string,
-  encType: string,
-  enc: 'enc' | 'dec',
-  encPath: string,
-  outPath?: string,
-  encName?: boolean | string
-) {
+export async function encryptFile(password, encType, enc, encPath, outPath, encName) {
   const start = Date.now()
   const interval = setInterval(() => {
     console.log(new Date(), 'waiting finish!!!')
@@ -84,7 +77,7 @@ export async function encryptFile(
     // console.log('@@outFilePath', outFilePath, encType, size)
     const writeStream = fs.createWriteStream(outFilePathTemp)
     const readStream = fs.createReadStream(filePath)
-    const promise = new Promise<void>((resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       readStream.pipe(enc === 'enc' ? flowEnc.encryptTransform() : flowEnc.decryptTransform()).pipe(writeStream)
       readStream.on('end', () => {
         console.log('@@finish filePath', filePath, outFilePathTemp)
@@ -104,7 +97,7 @@ export async function encryptFile(
   clearInterval(interval)
 }
 
-export function convertFile(...args: [password: string, encType: string, enc: 'enc' | 'dec', encPath: string, outPath?: string, encName?: string]) {
+export function convertFile(...args) {
   const statTime = Date.now()
   if (args.length > 3) {
     encryptFile(...args).then(() => {

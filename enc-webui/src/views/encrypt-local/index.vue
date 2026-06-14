@@ -19,11 +19,20 @@
         <el-radio-group v-model="folderForm.encType" size="small">
           <!-- <el-radio label="mix" border>MIX</el-radio> -->
           <el-radio label="aesctr" border>AES-CTR</el-radio>
-          <el-radio label="rc4" border>RC4</el-radio>
+          <el-radio label="chacha20" border>CHACHA20</el-radio>
+          <el-radio label="rc4" border>RC4(废弃)</el-radio>
         </el-radio-group>
       </el-form-item>
       <el-form-item label="密码">
         <el-input v-model="folderForm.password" style="max-width: 260px; margin-right: 10px" placeholder="12341234" />
+      </el-form-item>
+      <el-form-item label="目录名">
+        加密
+        <el-switch
+          v-model="folderForm.encFolder"
+          class="ml-2"
+          style="margin-right: 10px; --el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
+        />
       </el-form-item>
       <el-form-item label="文件名">
         加密
@@ -33,11 +42,11 @@
           style="margin-right: 10px; --el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
         />
       </el-form-item>
-      <el-form-item label="文件夹">
+      <el-form-item label="本地路径">
         <el-input v-model="folderForm.folderPath" style="max-width: 260px; margin-right: 10px" placeholder="/home/my-video" />
         <!-- <el-button type="success" size="small" style="margin-left: 10px" @click="checkFoldName('item')">选择</el-button> -->
       </el-form-item>
-      <el-form-item label="输出">
+      <el-form-item label="输出路径">
         <el-input v-model="folderForm.outPath" style="max-width: 260px; margin-right: 10px" placeholder="/home/outPath" />
         <!-- <el-button type="success" size="small" style="margin-left: 10px" @click="checkFoldName('item')">选择</el-button> -->
       </el-form-item>
@@ -80,7 +89,8 @@ const folderForm = reactive({
   encType: 'aesctr',
   password: '123456', // 文件夹密码
   operation: 'enc',
-  encName: false
+  encName: false,
+  encFolder: false
 })
 
 const alistConfigForm = reactive({})

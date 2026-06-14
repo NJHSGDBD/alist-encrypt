@@ -17,7 +17,7 @@ import bodyparser from 'koa-bodyparser'
 import FlowEnc from '@/utils/flowEnc'
 import levelDB from '@/utils/levelDB'
 import { webdavServer, alistServer, port, version } from '@/config'
-import { pathExec, pathFindPasswd } from '@/utils/commonUtil'
+import { convertRealName, pathExec, pathFindPasswd } from '@/utils/commonUtil'
 import globalHandle from '@/middleware/globalHandle'
 import encApiRouter from '@/router'
 import encNameRouter from '@/encNameRouter'
@@ -168,15 +168,13 @@ async function proxyHandle(ctx, next) {
     }
     // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
     let fileInfo = await getFileInfo(filePath)
-
     if (fileInfo === null) {
-      const rawFileName = decodeURIComponent(path.basename(filePath))
-      const ext = path.extname(rawFileName)
-      const encodedRawFileName = encodeURIComponent(rawFileName)
-      const encFileName = encodeName(passwdInfo.password, passwdInfo.encType, rawFileName)
-      const newFileName = encFileName + ext
-      filePath = filePath.replace(encodedRawFileName, newFileName)
-      request.urlAddr = request.urlAddr.replace(encodedRawFileName, newFileName)
+      const realFileName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
+      // 可能是处理webdav进来了，filePath可能需要decodeURIComponent
+      const encodedRawFileName = path.basename(filePath)
+      logger.info('@@webdav_encodeName:', filePath, fileInfo, request.urlAddr)
+      filePath = filePath.replace(encodedRawFileName, realFileName)
+      request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
       fileInfo = await getFileInfo(filePath)
     }
     logger.info('@@getFileInfo:', filePath, fileInfo, request.urlAddr)
@@ -230,8 +228,6 @@ proxyRouter.use(encNameRouter.routes()).use(encNameRouter.allowedMethods())
 
 // 处理文件下载的302跳转
 proxyRouter.get(/^\/d\/*/, proxyHandle)
-// 文件直接下载
-proxyRouter.get(/^\/p\/*/, proxyHandle)
 
 // that is not work when upload txt file if enable encName
 proxyRouter.put('/api/fs/put-back', async (ctx, next) => {

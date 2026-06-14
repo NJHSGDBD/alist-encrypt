@@ -86,6 +86,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
 }
 
 export async function httpClient(request, response) {
+  // urlAddr 包含http
   const { method, headers, urlAddr, reqBody, url } = request
   // 请求reqBody已被篡改，由http客户端自己调整length
   delete headers['content-length']

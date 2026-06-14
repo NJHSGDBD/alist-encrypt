@@ -150,7 +150,6 @@ const handle = async (ctx, next) => {
   if ('GET,PUT,DELETE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
     const url = request.url
     // check dir, convert url
-    const fileName = path.basename(url)
     const realName = convertRealName(passwdInfo.password, passwdInfo.encType, url)
     // maybe from aliyundrive, check this req url while get file list from enc folder
     if (url.endsWith('/') && 'GET,DELETE'.includes(request.method.toLocaleUpperCase())) {
@@ -181,8 +180,8 @@ const handle = async (ctx, next) => {
     request.urlAddr = path.dirname(request.urlAddr) + '/' + realName
     // cache file before upload in next(), rclone cmd 'copy' will PROPFIND this file when the file upload success right now
     const contentLength = request.headers['content-length'] || request.headers['x-expected-entity-length'] || 0
-    const fileDetail = { path: url, name: fileName, is_dir: false, size: contentLength }
-    logger.info('@@@put url', url)
+    const fileDetail = { path: request.url, name: realName, is_dir: false, size: contentLength }
+    logger.info('@@cacheFile url', request.url, realName)
     // 在页面上传文件，rclone会重复上传，所以要进行缓存文件信息，也不能在next() 因为rclone copy命令会出异常
     await cacheFileInfo(fileDetail)
   }

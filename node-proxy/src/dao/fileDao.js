@@ -18,7 +18,7 @@ export async function cacheFileInfo(fileInfo) {
   await levelDB.setExpire(pathKey, fileInfo, 1000 * 60 * cacheTime)
 }
 
-// 获取文件信息，偶尔要清理一下缓存
+// 获取文件信息，偶尔要清理一下缓存，这里存储的是真实的文件路径，云盘的路径
 export async function getFileInfo(path) {
   const pathKey = decodeURIComponent(fileInfoTable + path)
   const value = await levelDB.getValue(pathKey)

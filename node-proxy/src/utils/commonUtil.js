@@ -7,6 +7,10 @@ import Crcn from './crc6-8'
 
 const crc6 = new Crcn(6)
 const origPrefix = 'orig_'
+function isBadText(str) {
+  // return /[ÃÂ�]/.test(str)
+  return /[ÃÂ�¤§½]/.test(str)
+}
 
 // check file name, return real name
 export function convertRealName(password, encType, pathText, encSuffix) {
@@ -14,6 +18,7 @@ export function convertRealName(password, encType, pathText, encSuffix) {
   if (fileName.indexOf(origPrefix) === 0) {
     return fileName.replace(origPrefix, '')
   }
+
   // try encode name, fileName don't need decodeURI，encodeUrl func can't encode that like '(' '!'  in nodejs
   const ext = encSuffix || path.extname(fileName)
   const encName = encodeName(password, encType, decodeURIComponent(fileName))
@@ -47,7 +52,6 @@ export function convertRealPath(passwdList, fpath) {
       const realFoldName = convertRealName(passwdInfo.password, passwdInfo.encType, name)
       encFoldPath += '/' + name
       realFoldPath += '/' + realFoldName
-      console.log('@@@realFoldName', name, realFoldName)
     }
     foldPath = foldPath.replace(encFoldPath, realFoldPath)
   }
@@ -64,8 +68,12 @@ export function pathExec(encPath, url) {
   }
   return null
 }
-
+// 不允许加密乱码名字
 export function encodeName(password, encType, plainName) {
+  const isBad = isBadText(plainName)
+  if (isBad) {
+    console.log('@isBadText', plainName)
+  }
   const passwdOutward = FlowEnc.getPassWdOutward(password, encType)
   //  randomStr
   const mix64 = new MixBase64(passwdOutward)
@@ -146,7 +154,3 @@ export function pathFindPasswd(passwdList, url) {
   return {}
 }
 
-function isBadText(str) {
-  // return /[ÃÂ�]/.test(str)
-  return /[ÃÂ�¤§½]/.test(str)
-}

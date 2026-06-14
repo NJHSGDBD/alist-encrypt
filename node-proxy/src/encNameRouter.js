@@ -171,7 +171,7 @@ encNameRouter.all('/api/fs/dirs', bodyparserMw, async (ctx, next) => {
 
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
-  logger.info('@@fs/dirs11', ctx.req.reqBody)
+  logger.info('@@fs/dirs', ctx.req.reqBody)
   const respBody = await httpClient(ctx.req)
   // logger.info('@@@respBody', respBody)
   const result = JSON.parse(respBody)
@@ -195,7 +195,7 @@ encNameRouter.all('/api/fs/mkdir', bodyparserMw, async (ctx, next) => {
   ctx.request.body.path = realfoldPath
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
-  logger.info('@@fs/dirs11', ctx.req.reqBody)
+  logger.info('@@fs/mkdirs', ctx.req.reqBody)
   const respBody = await httpClient(ctx.req)
   // logger.info('@@@respBody', respBody)
   const result = JSON.parse(respBody)
@@ -227,7 +227,6 @@ const copyOrMoveFile = async (ctx, next) => {
   const respBody = await httpClient(ctx.req)
   ctx.body = respBody
 }
-
 
 encNameRouter.all('/api/fs/move', bodyparserMw, copyOrMoveFile)
 encNameRouter.all('/api/fs/copy', bodyparserMw, copyOrMoveFile)
@@ -342,6 +341,63 @@ encNameRouter.all('/api/fs/rename', bodyparserMw, handleFolderPath, async (ctx, 
 const regexPath = /\/([^\\/]*?)(\?|$)/
 const handleDownload = async (ctx, next) => {
   const request = ctx.req
+  const response = ctx.res
+  const { webdavConfig } = ctx.req
+  // 要定位请求文件的位置 bytes=98304-
+  const range = request.headers.range
+  const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
+
+  let filePath = ctx.req.url.split('?')[0]
+  // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
+  request.fileSize = 0
+  // 这里需要处理掉/p 路径
+  if (filePath.indexOf('/d/') === 0) {
+    filePath = filePath.replace('/d/', '/')
+  }
+  if (filePath.indexOf('/p/') === 0) {
+    filePath = filePath.replace('/p/', '/')
+  }
+  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
+  const folderPath = path.dirname(filePath)
+  const folderRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, folderPath)
+  ctx.req.url = ctx.req.url.replace(folderPath, folderRealPath)
+  ctx.req.urlAddr = ctx.req.urlAddr.replace(folderPath, folderRealPath)
+  if (passwdInfo && passwdInfo.encName) {
+    // reset content-length length
+    delete ctx.req.headers['content-length']
+    // Check whether the file name refers to an encrypted file or a directory
+    const fileName = path.basename(filePath)
+    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, fileName)
+    // Replace the real-name before downloading
+    const realFilePath = folderRealPath + '/' + realName
+    // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
+    let fileInfo = await getFileInfo(realFilePath)
+    if (fileInfo) {
+      request.fileSize = fileInfo.size * 1
+    }
+    request.passwdInfo = passwdInfo
+    ctx.req.url = ctx.req.url.replace(regexPath, `/${realName}$2`)
+    ctx.req.urlAddr = ctx.req.urlAddr.replace(regexPath, `/${realName}$2`)
+    logger.debug('@@download-fileName', filePath, ctx.req.url, fileName, realName)
+    // 根据文件路径来获取文件的大小
+    if (request.fileSize === 0) {
+      // 说明不用加密
+      return await httpProxy(request, response)
+    }
+    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
+    if (start) {
+      await flowEnc.setPosition(start)
+    }
+    return await httpProxy(request, response, null, flowEnc.decryptTransform())
+  }
+  await httpProxy(request, response)
+}
+// 直接读取txt文件会用到
+encNameRouter.get(/\/p\/*/, bodyparserMw, handleDownload)
+
+// webdav下载
+const handleWebDavDownload = async (ctx, next) => {
+  const request = ctx.req
   const { webdavConfig } = ctx.req
   let filePath = ctx.req.url.split('?')[0]
   // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
@@ -373,9 +429,8 @@ const handleDownload = async (ctx, next) => {
   }
   await next()
 }
-// 直接读取txt文件会用到
-encNameRouter.get(/^\/d\/*/, bodyparserMw, handleDownload)
-encNameRouter.get(/\/p\/*/, bodyparserMw, handleDownload)
+
+encNameRouter.get(/^\/d\/*/, bodyparserMw, handleWebDavDownload)
 
 // restRouter.all(/\/enc-api\/*/, router.routes(), restRouter.allowedMethods())
 export default encNameRouter

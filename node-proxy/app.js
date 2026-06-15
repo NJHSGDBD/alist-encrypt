@@ -134,18 +134,13 @@ async function proxyHandle(ctx, next) {
   // 检查路径是否满足加密要求，要拦截的路径可能有中文
   const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
   console.log('@@passwdInfo', pathInfo)
-  // fix webdav move file
-  if (request.method.toLocaleUpperCase() === 'MOVE' && headers.destination) {
-    let destination = headers.destination
-    destination = request.serverAddr + destination.substring(destination.indexOf(path.dirname(request.url)), destination.length)
-    request.headers.destination = destination
-  }
+
   // 如果是上传文件，那么进行流加密，目前只支持webdav上传，如果alist页面有上传功能，那么也可以兼容进来
   if (request.method.toLocaleUpperCase() === 'PUT' && passwdInfo) {
     // 兼容macos的webdav客户端x-expected-entity-length
     const contentLength = headers['content-length'] || headers['x-expected-entity-length'] || 0
     request.fileSize = contentLength * 1
-    // 需要知道文件长度，等于0 说明不用加密，这个来自webdav奇怪的请求
+    // 需要知道文件长度，等于0 说明不用加密，这个来自webdav奇怪的请求，真坑爹的协议
     if (request.fileSize === 0) {
       return await httpProxy(request, response)
     }
@@ -166,6 +161,7 @@ async function proxyHandle(ctx, next) {
     if (filePath.indexOf('/d/') === 0) {
       filePath = filePath.replace('/d/', '/')
     }
+
     // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
     let fileInfo = await getFileInfo(filePath)
     if (fileInfo === null) {
@@ -177,7 +173,7 @@ async function proxyHandle(ctx, next) {
       request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
       fileInfo = await getFileInfo(filePath)
     }
-    logger.info('@@getFileInfo:', filePath, fileInfo, request.urlAddr)
+    logger.info('@@webdav_getFileInfo:', filePath, fileInfo, request.urlAddr)
     if (fileInfo) {
       request.fileSize = fileInfo.size * 1
     } else if (request.headers.authorization) {
@@ -195,7 +191,7 @@ async function proxyHandle(ctx, next) {
       }
     }
     request.passwdInfo = passwdInfo
-    // logger.info('@@@@request.filePath ', request.filePath, result)
+    logger.info('@@@@request.filePath ', request.filePath, request.fileSize)
     if (request.fileSize === 0) {
       // 说明不用加密
       return await httpProxy(request, response)

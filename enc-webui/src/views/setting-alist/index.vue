@@ -181,7 +181,7 @@ const addPasswd = () => {
     encName: true, // encrypt file name
     encFolder: false, // encrypt file name
     describe: 'my video',
-    encPath: '/aliyun/encrypt/*'
+    encPath: '/aliyun/encrypt/.*'
   })
 }
 

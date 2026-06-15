@@ -28,7 +28,7 @@ class ChaCha20 {
     const passwdSalt = this.passwdOutward + sizeSalt
     // fileHexKey: file passwd，could be share
     const passwdKey = crypto.createHash('sha256').update(passwdSalt).digest()
-    const nonce = crypto.createHash('md5').update(sizeSalt).digest().subarray(0, 12)
+    const nonce = crypto.createHash('md5').update(this.sizeSalt).digest().subarray(0, 12)
     this._constructor(passwdKey, nonce)
   }
   // counter = 0，this.counter 代表加密的块
@@ -74,14 +74,11 @@ class ChaCha20 {
     ]
     // 注意不能this.counter = this.counter++ >>> 0, error
     this.counter = (this.counter + 1) >>> 0
-    if (this.counter == 2) {
-      console.log('@@old nonce', this.nonce)
+    if (this.counter == 0) {
       // 达到256G，调整once
       const bt = this._bytesToUint32(this.nonce)
       bt[2] = (bt[2] + 1) >>> 0
       this._uint32ToBytes(bt, this.nonce)
-      this.nonce
-      console.log('@@new nonce', this.nonce)
     }
     const x = [...st]
     // 20轮 = 10次双轮
@@ -120,11 +117,11 @@ class ChaCha20 {
   }
 
   encrypt(messageBytes) {
-    return this.cipher.update(messageBytes)
+    return this.update(messageBytes)
   }
 
   decrypt(messageBytes) {
-    return this.cipher.update(messageBytes)
+    return this.update(messageBytes)
   }
 
   encryptTransform() {

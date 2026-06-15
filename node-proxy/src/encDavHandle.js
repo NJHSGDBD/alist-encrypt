@@ -60,16 +60,18 @@ function cacheWebdavFileInfo(fileInfo) {
   return fileDetail
 }
 
-// 拦截全部
-const handle = async (ctx, next) => {
+// 拦截webdav，预处理request
+const preHandle = async (ctx, next) => {
   const request = ctx.req
-  const { passwdList } = request.webdavConfig
+  const response = ctx.res
+  const { passwdList, https } = request.webdavConfig
   const { passwdInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
   // 创建目录
   if (ctx.method.toLocaleUpperCase() === 'MKCOL' && passwdInfo && passwdInfo.encName) {
     // 对名字进行加密, TODO
-    console.log('@@method', request.body, request.url)
+    console.log('@@method MKCOL', request.body, request.url)
   }
+  // 列表查询或者文件信息查询，把返回来的名字进行加密
   if (ctx.method.toLocaleUpperCase() === 'PROPFIND' && passwdInfo && passwdInfo.encName) {
     // check dir, convert url
     const url = request.url
@@ -91,12 +93,15 @@ const handle = async (ctx, next) => {
     // decrypt file name
     let respBody = await httpClient(ctx.req, ctx.res)
     const respData = parser.parse(respBody)
+    console.log('@@respData', respData)
     // convert file name for show
     if (respData.multistatus) {
       const respJson = respData.multistatus.response
+      // 这里是获取到列表
       if (respJson instanceof Array) {
         // console.log('@@respJsonArray', respJson)
         respJson.forEach((fileInfo) => {
+          console.log('@@webdav fileInfo ', fileInfo)
           // cache real file info，include forder name
           cacheWebdavFileInfo(fileInfo)
           if (passwdInfo && passwdInfo.encName) {
@@ -104,26 +109,34 @@ const handle = async (ctx, next) => {
             // logger.debug('@@getFileNameForShow1 list', passwdInfo.password, fileName, decodeURI(fileName), showName)
             if (fileName) {
               const showXmlName = showName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
-              respBody = respBody.replace(`${fileName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
-              respBody = respBody.replace(`${decodeURI(fileName)}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
+              // 群晖的展示的名字是hrefName，ES文件夹展示的名字是hrefName，各种坑爹客户端
+              const displayname = decodeURI(fileName).replace(/&/g, '&amp;').replace(/</g, '&gt;')
+              const hrefName = fileName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
+              respBody = respBody.replace(`${hrefName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
+              respBody = respBody.replace(`${displayname}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
+              console.log('@@qunhuiaa', respBody)
             }
           }
         })
         // waiting cacheWebdavFileInfo a moment
         await sleep(50)
       } else if (passwdInfo && passwdInfo.encName) {
+        // 这里PROPFIND请求的是文件信息，上面得到是列表后，客户端还会继续请求每个文件的信息。。。
         const fileInfo = respJson
         const { fileName, showName } = getFileNameForShow(fileInfo, passwdInfo)
         // logger.debug('@@getFileNameForShow2 file', fileName, showName, url, respJson.propstat)
         if (fileName) {
           const showXmlName = showName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
-          respBody = respBody.replace(`${fileName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
-          respBody = respBody.replace(`${decodeURI(fileName)}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
+          const displayname = decodeURI(fileName).replace(/&/g, '&amp;').replace(/</g, '&gt;')
+          const hrefName = fileName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
+          respBody = respBody.replace(`${hrefName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
+          respBody = respBody.replace(`${displayname}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
+          console.log('@@qunhui12aa', displayname, showXmlName, encodeURI(showXmlName), respBody)
         }
       }
     }
     // 检查数据兼容的问题，优先XML对比。
-    // logger.debug('@@respJsxml', respBody, ctx.headers)
+    logger.debug('@@respJsxml', respBody, ctx.headers)
     // const resultBody = parser.parse(respBody)
     // logger.debug('@@respJSONData2', ctx.res.statusCode, JSON.stringify(resultBody))
 
@@ -137,19 +150,36 @@ const handle = async (ctx, next) => {
     ctx.body = respBody
     return
   }
+
   // copy or move file
-  if ('COPY,MOVE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
-    const url = request.url
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, url)
-    request.headers.destination = path.dirname(request.headers.destination) + '/' + encodeURI(realName)
-    request.url = path.dirname(request.url) + '/' + encodeURI(realName)
-    request.urlAddr = path.dirname(request.urlAddr) + '/' + encodeURI(realName)
+  if ('COPY,MOVE'.includes(request.method.toLocaleUpperCase())) {
+    if (passwdInfo && passwdInfo.encName) {
+      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURIComponent(request.url))
+      const distName = convertRealName(passwdInfo.password, passwdInfo.encType, request.headers.destination)
+      request.headers.destination = path.dirname(request.headers.destination) + '/' + encodeURI(distName)
+      // 直接获取用户名
+      request.url = path.dirname(request.url) + '/' + encodeURI(realName)
+      console.log('2@encodeURI(realName)', path.dirname(request.url), realName, encodeURI(realName))
+      request.urlAddr = path.dirname(request.urlAddr) + '/' + encodeURI(realName)
+    }
+    let destination = request.headers.destination
+    const destUrl = new URL(destination)
+    const userName = destUrl.username
+    const addrUrl = destination.substring(destination.indexOf(path.dirname(request.url)), destination.length)
+    if (userName) {
+      request.headers.destination = `http://${userName}@${request.headers.host}` + addrUrl
+    } else {
+      request.headers.destination = `http://${request.headers.host}` + addrUrl
+    }
+    console.log('@@move_dest', destination, request.headers.destination)
+    return await httpClient(request, response)
   }
 
   // upload file
   if ('GET,PUT,DELETE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
     const url = request.url
     // check dir, convert url
+    const fileName = path.basename(url)
     const realName = convertRealName(passwdInfo.password, passwdInfo.encType, url)
     // maybe from aliyundrive, check this req url while get file list from enc folder
     if (url.endsWith('/') && 'GET,DELETE'.includes(request.method.toLocaleUpperCase())) {
@@ -180,12 +210,13 @@ const handle = async (ctx, next) => {
     request.urlAddr = path.dirname(request.urlAddr) + '/' + realName
     // cache file before upload in next(), rclone cmd 'copy' will PROPFIND this file when the file upload success right now
     const contentLength = request.headers['content-length'] || request.headers['x-expected-entity-length'] || 0
-    const fileDetail = { path: request.url, name: realName, is_dir: false, size: contentLength }
-    logger.info('@@cacheFile url', request.url, realName)
+    // 注意这里缓存的路径，不要跟上面cacheWebdavFileInfo 冲突, 不然size会归0
+    const fileDetail = { path: url, name: fileName, is_dir: false, size: contentLength }
+    logger.info('@@@put url', url, fileName)
     // 在页面上传文件，rclone会重复上传，所以要进行缓存文件信息，也不能在next() 因为rclone copy命令会出异常
     await cacheFileInfo(fileDetail)
   }
   await next()
 }
 
-export default handle
+export default preHandle

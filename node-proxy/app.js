@@ -137,12 +137,12 @@ async function proxyHandleTest(ctx, next) {
   // req 是nodejs原生对象
   const request = ctx.req
   const response = ctx.res
-  console.log('@request_data', request.url, request.headers)
+  logger.info('@request_data', request.url, request.headers)
   // const result = await http(request, response)
   let respBody = await httpProxy(ctx.req, ctx.res)
   // ctx.status = ctx.res.statusCode
   // ctx.body = respBody
-  console.log('@@request_log', request.urlAddr, response.statusCode, response.getHeaderNames())
+  logger.info('@@request_log', request.urlAddr, response.statusCode, response.getHeaderNames())
 }
 
 // 初始化webdav路由，这里可以优化成动态路由，只不过没啥必要，修改配置后直接重启就好了

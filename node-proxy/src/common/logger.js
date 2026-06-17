@@ -13,6 +13,6 @@ log4js.configure({
     default: { appenders: ['console', 'fileLogs'], level: 'info' },
   },
 })
-
+// warn info debug
 const category = process.env.RUN_MODE === 'DEV' ? 'debug' : 'default'
 export const logger = log4js.getLogger(category)

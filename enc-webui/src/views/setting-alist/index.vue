@@ -174,7 +174,7 @@ const refSearchForm = $ref()
 // 添加密码配置
 const addPasswd = () => {
   alistConfigForm.passwdList.push({
-    id: Math.random(),
+    id: crypto.randomUUID(),
     password: '123456',
     encType: 'aesctr',
     enable: true,

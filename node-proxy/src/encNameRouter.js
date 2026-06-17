@@ -122,6 +122,7 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
   const uploadEncPath = headers['file-path'] ? decodeURIComponent(headers['file-path']) : '/-'
   const fileName = path.basename(uploadEncPath)
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, uploadEncPath)
+  logger.info('@@fs/put', uploadEncPath)
   let uploadPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(uploadEncPath))
   uploadPath = uploadPath + '/' + fileName
   if (passwdInfo) {
@@ -145,12 +146,15 @@ encNameRouter.all('/api/fs/remove', bodyparserMw, async (ctx, next) => {
   const { dir: folderPath, names } = ctx.request.body
   const dir = convertRealPath(ctx.req.webdavConfig.passwdList, folderPath)
   const { webdavConfig } = ctx.req
-  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, dir)
+  // 遇到跟目录会识别不了，必须是/aliyun/encfold/
+  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, dir + '/')
   // maybe a folder，remove anyway the name
   const fileNames = Object.assign([], names)
+  console.log('@@remove passwd', passwdInfo, dir)
   if (passwdInfo && passwdInfo.encName) {
     for (let i = 0; i < names.length; i++) {
       fileNames[i] = convertRealName(passwdInfo.password, passwdInfo.encType, names[i])
+      logger.info('@@remove name', fileNames[i])
     }
   }
   const reqBody = { dir, names: fileNames }
@@ -210,7 +214,7 @@ const copyOrMoveFile = async (ctx, next) => {
   const dstDir = convertRealPath(ctx.req.webdavConfig.passwdList, dst_dir)
   const srcDir = convertRealPath(ctx.req.webdavConfig.passwdList, src_dir)
 
-  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, srcDir)
+  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, srcDir + '/')
   let fileNames = []
   if (passwdInfo && passwdInfo.encName && names) {
     logger.info('@@move encName', passwdInfo.encName)

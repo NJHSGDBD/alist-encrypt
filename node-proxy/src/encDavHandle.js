@@ -164,7 +164,8 @@ const preHandle = async (ctx, next) => {
       const { passwdInfo: destPasswd } = pathFindPasswd(request.webdavConfig.passwdList, decodeURI(request.headers.destination))
       // 如果是同一个加密路径则保持原加密名字，否则按原明文名字存储，避免认错
       if (destPasswd && destPasswd.id === passwdInfo.id) {
-        request.headers.destination = path.dirname(request.headers.destination) + '/' + encodeURI(realName)
+        const realDestName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(request.headers.destination))
+        request.headers.destination = path.dirname(request.headers.destination) + '/' + encodeURI(realDestName)
         logger.info('@@distName_enc', encodeURI(realName))
       } else if (showName.indexOf(origPrefix) === 0) {
         // 如果是orig_开头，则恢复原明文名字，此时也是realName
@@ -172,7 +173,7 @@ const preHandle = async (ctx, next) => {
       }
     }
     // 群晖再移动文件后，会立刻查询这个文件，如果文件不存在或者显示的文字不一样就会显示异常，实际移动成功。
-    // 一般移动到新的加密目录才会出现这样的页面错误，实际不影响
+    // 一般移动到新的加密目录才会出现这样的页面错误，实际不影响使用。
     let destination = request.headers.destination
     const destUrl = new URL(destination)
     const userName = destUrl.username
@@ -210,7 +211,7 @@ const preHandle = async (ctx, next) => {
     return await httpProxy(request, response, flowEnc.encryptTransform())
   }
   // GET file
-  if ('GET,DELETE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
+  if ('GET,HEAD,DELETE,POST'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
     const url = request.url
     // check dir, convert url
     const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(url))
@@ -263,7 +264,6 @@ const preHandle = async (ctx, next) => {
     // 根据文件路径来获取文件的大小
     const urlPath = ctx.req.url.split('?')[0]
     let filePath = urlPath
-    // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
     request.fileSize = 0
     // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
     let fileInfo = await getFileInfo(filePath)
@@ -273,17 +273,21 @@ const preHandle = async (ctx, next) => {
       const encodedRawFileName = path.basename(filePath)
       logger.info('@@webdav_encodeName:', filePath, fileInfo, request.urlAddr)
       filePath = filePath.replace(encodedRawFileName, realFileName)
-      request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
       fileInfo = await getFileInfo(filePath)
+      if (fileInfo) {
+        // 使用加密的名字
+        request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
+      }
     }
+    // 文件复制后，群晖就会立刻查询文件的信息 HEAD，这里就有一些系列的判断需要处理。。。
     logger.info('@@webdav_getFileInfo:', filePath, fileInfo, request.urlAddr)
     if (fileInfo) {
       request.fileSize = fileInfo.size * 1
     } else if (request.headers.authorization) {
-      // 这里要判断是否webdav进行请求, 这里默认就是webdav请求了
+      // 这里要从就是webdav请求了文件信息
       const authorization = request.headers.authorization
       const webdavFileInfo = await getWebdavFileInfo(request.urlAddr, authorization)
-      logger.info('@@webdavFileInfo_size:', filePath, webdavFileInfo)
+      logger.info('@@webdavFileInfo_size:', filePath, request.urlAddr, webdavFileInfo)
       if (webdavFileInfo) {
         webdavFileInfo.path = filePath
         // 某些get请求返回的size=0，不要缓存起来
@@ -294,7 +298,7 @@ const preHandle = async (ctx, next) => {
       }
     }
     request.passwdInfo = passwdInfo
-    logger.info('@@@@request.filePath ', request.filePath, request.fileSize)
+    logger.info('@@@@request.filePath ', filePath, request.fileSize)
     if (request.fileSize === 0) {
       // 说明不用加密
       return await httpProxy(request, response)
@@ -305,6 +309,7 @@ const preHandle = async (ctx, next) => {
     }
     return await httpProxy(request, response, null, flowEnc.decryptTransform())
   }
+  logger.info('@@end preHandle', request.method, request.url)
   await next()
 }
 

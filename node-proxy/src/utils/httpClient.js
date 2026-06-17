@@ -49,7 +49,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
         response.setHeader(key, httpResp.headers[key])
       }
       // 下载时解密文件名
-      if (method === 'GET' && response.statusCode === 200 && passwdInfo && passwdInfo.enable && passwdInfo.encName) {
+      if (method === 'GET' && response.statusCode === 200 && passwdInfo && passwdInfo.encName) {
         let fileName = decodeURIComponent(path.basename(url))
         fileName = decodeName(passwdInfo.password, passwdInfo.encType, fileName.replace(path.extname(fileName), ''))
         if (fileName) {
@@ -62,10 +62,12 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
 
       httpResp
         .on('end', () => {
+          // 这里好像会好一些，主动完成响应
+          response.end()
           resolve()
         })
         .on('close', () => {
-          logger.info('@远程响应关闭...', reqId, urlAddr)
+          logger.info('@远程响应关闭...', method, reqId, urlAddr)
           // response.destroy()
           if (decryptTransform) decryptTransform.destroy()
         })
@@ -120,7 +122,7 @@ export async function httpClient(request, response) {
         })
         .on('end', () => {
           resolve(result)
-          logger.info('httpResp响应结束...', url)
+          logger.info('httpClient响应结束.', method, result.length, url)
         })
     })
     httpReq.on('error', (err) => {

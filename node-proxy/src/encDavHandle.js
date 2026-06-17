@@ -6,7 +6,8 @@ import { logger } from './common/logger'
 import path from 'path'
 import { httpClient, httpProxy } from './utils/httpClient'
 import { XMLParser } from 'fast-xml-parser'
-// import { escape } from 'querystring'
+import FlowEnc from '@/utils/flowEnc'
+import { getWebdavFileInfo } from '@/utils/webdavClient'
 
 async function sleep(time) {
   return new Promise((resolve) => {
@@ -69,7 +70,7 @@ const preHandle = async (ctx, next) => {
   // 创建目录
   if (ctx.method.toLocaleUpperCase() === 'MKCOL' && passwdInfo && passwdInfo.encName) {
     // 对名字进行加密, TODO
-    console.log('@@method MKCOL', request.body, request.url)
+    logger.info('@@method MKCOL', request.body, request.url)
     return await httpProxy(ctx.req, ctx.res)
   }
   // 列表查询或者文件信息查询，把返回来的名字进行加密
@@ -99,9 +100,9 @@ const preHandle = async (ctx, next) => {
       const respJson = respData.multistatus.response
       // 这里是获取到列表，文件夹和文件
       if (respJson instanceof Array) {
-        // console.log('@@respJsonArray', respJson)
+        // logger.info('@@respJsonArray', respJson)
         respJson.forEach((fileInfo) => {
-          // console.log('@@webdav fileInfo ', fileInfo)
+          // logger.info('@@webdav fileInfo ', fileInfo)
           // cache real file info，include forder name
           cacheWebdavFileInfo(fileInfo)
           if (passwdInfo && passwdInfo.encName) {
@@ -189,20 +190,24 @@ const preHandle = async (ctx, next) => {
     return
   }
   // 处理文件上传
-  if ('PUT' === request.method.toLocaleUpperCase() && passwdInfo && passwdInfo.encName) {
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(request.url))
-    // console.log('@@convert file name', fileName, realName)
-    request.url = path.dirname(request.url) + '/' + realName
-    request.urlAddr = path.dirname(request.urlAddr) + '/' + realName
+  if ('PUT' === request.method.toLocaleUpperCase() && passwdInfo) {
+    let fileName = path.basename(decodeURI(request.url))
+    if (passwdInfo.encName) {
+      fileName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(request.url))
+      // logger.info('@@convert file name', fileName, realName)
+      request.url = path.dirname(request.url) + '/' + fileName
+      request.urlAddr = path.dirname(request.urlAddr) + '/' + fileName
+    }
     // cache file before upload in next(), rclone cmd 'copy' will PROPFIND this file when the file upload success right now
     const contentLength = request.headers['content-length'] || request.headers['x-expected-entity-length'] || 0
     // 注意这里缓存的路径，不要跟上面cacheWebdavFileInfo 冲突, 不然size会归0
     // 上传之后要立刻缓存起来，把加密的名字对应的路径缓存起来
-    const fileDetail = { path: request.url, name: realName, is_dir: false, size: contentLength }
-    logger.info('@@getput_url', request.url, realName, request.headers)
+    const fileDetail = { path: request.url, name: fileName, is_dir: false, size: contentLength }
+    logger.info('@@webdav_put_info', request.url, fileName, request.headers)
     // 在页面上传文件，rclone会重复上传，所以要进行缓存文件信息,让他能找到文件信息，也不能在next() 因为rclone copy命令会出异常
     await cacheFileInfo(fileDetail)
-    return await httpProxy(ctx.req, ctx.res)
+    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, contentLength * 1)
+    return await httpProxy(request, response, flowEnc.encryptTransform())
   }
   // GET file
   if ('GET,DELETE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
@@ -230,7 +235,7 @@ const preHandle = async (ctx, next) => {
           }
         }
       }
-      console.log('@@GET_DELETE', respBody)
+      logger.info('@@GET_DELETE', respBody)
       ctx.status = respBody.statusCode
       ctx.body = respBody
       return
@@ -249,6 +254,56 @@ const preHandle = async (ctx, next) => {
       request.url = path.dirname(request.url) + '/' + realName
       request.urlAddr = path.dirname(request.urlAddr) + '/' + realName
     }
+  }
+  // 如果是下载文件，那么就进行判断是否解密
+  if ('GET,HEAD,POST'.includes(request.method.toLocaleUpperCase()) && passwdInfo) {
+    // 要定位请求文件的位置 bytes=98304-
+    const range = request.headers.range
+    const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
+    // 根据文件路径来获取文件的大小
+    const urlPath = ctx.req.url.split('?')[0]
+    let filePath = urlPath
+    // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
+    request.fileSize = 0
+    // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
+    let fileInfo = await getFileInfo(filePath)
+    if (fileInfo === null) {
+      const realFileName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
+      // 可能是处理webdav进来了，filePath可能需要decodeURIComponent
+      const encodedRawFileName = path.basename(filePath)
+      logger.info('@@webdav_encodeName:', filePath, fileInfo, request.urlAddr)
+      filePath = filePath.replace(encodedRawFileName, realFileName)
+      request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
+      fileInfo = await getFileInfo(filePath)
+    }
+    logger.info('@@webdav_getFileInfo:', filePath, fileInfo, request.urlAddr)
+    if (fileInfo) {
+      request.fileSize = fileInfo.size * 1
+    } else if (request.headers.authorization) {
+      // 这里要判断是否webdav进行请求, 这里默认就是webdav请求了
+      const authorization = request.headers.authorization
+      const webdavFileInfo = await getWebdavFileInfo(request.urlAddr, authorization)
+      logger.info('@@webdavFileInfo_size:', filePath, webdavFileInfo)
+      if (webdavFileInfo) {
+        webdavFileInfo.path = filePath
+        // 某些get请求返回的size=0，不要缓存起来
+        if (webdavFileInfo.size * 1 > 0) {
+          cacheFileInfo(webdavFileInfo)
+        }
+        request.fileSize = webdavFileInfo.size * 1
+      }
+    }
+    request.passwdInfo = passwdInfo
+    logger.info('@@@@request.filePath ', request.filePath, request.fileSize)
+    if (request.fileSize === 0) {
+      // 说明不用加密
+      return await httpProxy(request, response)
+    }
+    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
+    if (start) {
+      await flowEnc.setPosition(start)
+    }
+    return await httpProxy(request, response, null, flowEnc.decryptTransform())
   }
   await next()
 }

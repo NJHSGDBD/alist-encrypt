@@ -17,14 +17,12 @@ import bodyparser from 'koa-bodyparser'
 import FlowEnc from '@/utils/flowEnc'
 import levelDB from '@/utils/levelDB'
 import { webdavServer, alistServer, port, version } from '@/config'
-import { convertRealName, pathExec, pathFindPasswd } from '@/utils/commonUtil'
+import { pathExec, pathFindPasswd } from '@/utils/commonUtil'
 import globalHandle from '@/middleware/globalHandle'
 import encApiRouter from '@/router'
 import encNameRouter from '@/encNameRouter'
 import encDavHandle from '@/encDavHandle'
 
-import { cacheFileInfo, getFileInfo } from '@/dao/fileDao'
-import { getWebdavFileInfo } from '@/utils/webdavClient'
 import staticServer from 'koa-static'
 import { logger } from '@/common/logger'
 import { encodeName } from '@/utils/commonUtil'
@@ -127,61 +125,11 @@ async function proxyHandle(ctx, next) {
   const request = ctx.req
   const response = ctx.res
   const { passwdList } = request.webdavConfig
-  const { headers } = request
-  // 要定位请求文件的位置 bytes=98304-
-  const range = headers.range
-  const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
-  // 检查路径是否满足加密要求，要拦截的路径可能有中文
-  const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
-  console.log('@@webdavpasswdInfo', pathInfo)
 
-  // 如果是下载文件，那么就进行判断是否解密
-  if ('GET,HEAD,POST'.includes(request.method.toLocaleUpperCase()) && passwdInfo) {
-    // 根据文件路径来获取文件的大小
-    const urlPath = ctx.req.url.split('?')[0]
-    let filePath = urlPath
-    // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
-    request.fileSize = 0
-    // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
-    let fileInfo = await getFileInfo(filePath)
-    if (fileInfo === null) {
-      const realFileName = convertRealName(passwdInfo.password, passwdInfo.encType, filePath)
-      // 可能是处理webdav进来了，filePath可能需要decodeURIComponent
-      const encodedRawFileName = path.basename(filePath)
-      logger.info('@@webdav_encodeName:', filePath, fileInfo, request.urlAddr)
-      filePath = filePath.replace(encodedRawFileName, realFileName)
-      request.urlAddr = request.urlAddr.replace(encodedRawFileName, encodeURIComponent(realFileName))
-      fileInfo = await getFileInfo(filePath)
-    }
-    logger.info('@@webdav_getFileInfo:', filePath, fileInfo, request.urlAddr)
-    if (fileInfo) {
-      request.fileSize = fileInfo.size * 1
-    } else if (request.headers.authorization) {
-      // 这里要判断是否webdav进行请求, 这里默认就是webdav请求了
-      const authorization = request.headers.authorization
-      const webdavFileInfo = await getWebdavFileInfo(request.urlAddr, authorization)
-      logger.info('@@webdavFileInfo_size:', filePath, webdavFileInfo)
-      if (webdavFileInfo) {
-        webdavFileInfo.path = filePath
-        // 某些get请求返回的size=0，不要缓存起来
-        if (webdavFileInfo.size * 1 > 0) {
-          cacheFileInfo(webdavFileInfo)
-        }
-        request.fileSize = webdavFileInfo.size * 1
-      }
-    }
-    request.passwdInfo = passwdInfo
-    logger.info('@@@@request.filePath ', request.filePath, request.fileSize)
-    if (request.fileSize === 0) {
-      // 说明不用加密
-      return await httpProxy(request, response)
-    }
-    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
-    if (start) {
-      await flowEnc.setPosition(start)
-    }
-    return await httpProxy(request, response, null, flowEnc.decryptTransform())
-  }
+  // 检查路径是否满足加密要求，要拦截的路径可能有中文
+  const { pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
+  logger.info('@@webdavpasswdInfo', pathInfo)
+
   await httpProxy(request, response)
 }
 // 测试方法

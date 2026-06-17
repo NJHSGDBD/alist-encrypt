@@ -299,7 +299,7 @@ const handleFolderPath = async (ctx, next) => {
     // 先尝试不加密获取文件是否存在。
     let realFileName = path.basename(filePath)
     let fileRealPath = folderRealPath + '/' + realFileName
-    console.log('@fileRealPath', fileRealPath)
+    logger.debug('@rename_realPath', fileRealPath)
     let fileInfo = await getFileInfo(encodeURIComponent(fileRealPath))
     if (!fileInfo) {
       // 尝试使用加密的名字，realFileName可能是目录或者无后缀文件名
@@ -319,7 +319,7 @@ const handleFolderPath = async (ctx, next) => {
       ctx.request.body = { path: fileRealPath, name }
       return await next()
     }
-    logger.warn('@@rename error', filePath, name)
+    logger.error('@@rename error', filePath, name)
   }
   // 不加密目录，也不加密文件名
   ctx.request.body = { path: filePath, name }
@@ -328,11 +328,12 @@ const handleFolderPath = async (ctx, next) => {
 encNameRouter.all('/api/fs/rename', bodyparserMw, handleFolderPath, async (ctx, next) => {
   let { path: filePath, name } = ctx.request.body
   const reqBody = { path: filePath, name }
-  console.log('@@reqBody', reqBody)
+  logger.debug('@@reqBody', reqBody)
   ctx.req.reqBody = reqBody
   // reset content-length length
   delete ctx.req.headers['content-length']
-  const respBody = await httpClient(ctx.req)
+  const respBody = await httpClient(ctx.req, ctx.res)
+  ctx.status = ctx.res.statusCode
   ctx.body = respBody
 })
 // 替换字符，http://alist.com/p/encname.txt?sign=12.. 替换 http://alist.com/p/realname.txt?sign=12..

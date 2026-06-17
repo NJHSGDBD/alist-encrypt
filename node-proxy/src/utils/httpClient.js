@@ -4,6 +4,7 @@ import crypto, { randomUUID } from 'crypto'
 import levelDB from './levelDB'
 import path from 'path'
 import { decodeName } from './commonUtil'
+import { logger } from '@/common/logger'
 // import { pathExec } from './commonUtil'
 const Agent = http.Agent
 const Agents = https.Agent
@@ -14,8 +15,8 @@ const httpAgent = new Agent({ keepAlive: true })
 
 export async function httpProxy(request, response, encryptTransform, decryptTransform) {
   const { method, headers, urlAddr, passwdInfo, url, fileSize } = request
-  const reqId = randomUUID()
-  console.log('@@request_proxy: ', reqId, method, urlAddr, headers, !!encryptTransform, !!decryptTransform)
+  const reqId = randomUUID().substring(30)
+  logger.debug('@@request_proxy: ', reqId, method, urlAddr, headers, !!encryptTransform, !!decryptTransform)
   // 创建请求
   const options = {
     method,
@@ -27,7 +28,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
   return new Promise((resolve, reject) => {
     // 处理重定向的请求，让下载的流量经过代理服务器
     const httpReq = httpRequest.request(urlAddr, options, async (httpResp) => {
-      console.log('@@statusCode', reqId, httpResp.statusCode, httpResp.headers)
+      logger.debug('@@statusCode', reqId, httpResp.statusCode, httpResp.headers)
       response.statusCode = httpResp.statusCode
       if (response.statusCode % 300 < 5) {
         // 可能出现304，redirectUrl = undefined
@@ -35,12 +36,11 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
         // 百度云盘不是https，坑爹，因为天翼云会多次302，所以这里要保持，跳转后的路径保持跟上次一致，经过本服务器代理就可以解密
         if (decryptTransform && passwdInfo.enable) {
           const key = crypto.randomUUID()
-          console.log()
           await levelDB.setExpire(key, { redirectUrl, passwdInfo, fileSize }, 60 * 60 * 72) // 缓存起来，默认3天，足够下载和观看了
           // 、Referer
           httpResp.headers.location = `/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(url)}`
         }
-        console.log('302 redirectUrl:', redirectUrl)
+        logger.info('302 redirectUrl:', redirectUrl)
       } else if (httpResp.headers['content-range'] && httpResp.statusCode === 200) {
         response.statusCode = 206
       }
@@ -55,7 +55,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
         if (fileName) {
           let cd = response.getHeader('content-disposition')
           cd = cd ? cd.replace(/filename\*?=[^=;]*;?/g, '') : ''
-          console.log('@@httpproxy解密文件名...', reqId, fileName)
+          logger.info('@@proxy解密文件名', reqId, fileName)
           response.setHeader('content-disposition', cd + `filename*=UTF-8''${encodeURIComponent(fileName)};`)
         }
       }
@@ -65,7 +65,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
           resolve()
         })
         .on('close', () => {
-          console.log('@远程响应关闭...', reqId, urlAddr)
+          logger.info('@远程响应关闭...', reqId, urlAddr)
           // response.destroy()
           if (decryptTransform) decryptTransform.destroy()
         })
@@ -73,13 +73,13 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
       decryptTransform ? httpResp.pipe(decryptTransform).pipe(response) : httpResp.pipe(response)
     })
     httpReq.on('error', (err) => {
-      console.log('@@httpProxy request error ', reqId, err, urlAddr, headers)
+      logger.error('@@httpProxy request error ', reqId, err, urlAddr, headers)
     })
     // 是否需要加密
     encryptTransform ? request.pipe(encryptTransform).pipe(httpReq) : request.pipe(httpReq)
     // 重定向的请求 关闭时 关闭被重定向的请求
     response.on('close', () => {
-      console.log('@本地响应关闭...', reqId, url)
+      logger.debug('@本地响应关闭...', reqId, url)
       httpReq.destroy()
     })
   })
@@ -90,7 +90,7 @@ export async function httpClient(request, response) {
   const { method, headers, urlAddr, reqBody, url } = request
   // 请求reqBody已被篡改，由调用者调整length或删除，不然影响webdav
   // delete headers['content-length']
-  console.log('@@request_client: ', method, urlAddr, headers, reqBody)
+  logger.debug('@@request_client: ', method, urlAddr, headers, reqBody)
   // 创建请求
   const options = {
     method,
@@ -102,7 +102,7 @@ export async function httpClient(request, response) {
   return new Promise((resolve, reject) => {
     // 处理重定向的请求，让下载的流量经过代理服务器
     const httpReq = httpRequest.request(urlAddr, options, async (httpResp) => {
-      console.log('@@statusCode', httpResp.statusCode, httpResp.headers)
+      logger.debug('@@statusCode', httpResp.statusCode, httpResp.headers)
       if (response) {
         // 外部的ctx.body=OK会导致statusCode=200，外部方法要执行ctx.status = ctx.res.statusCode
         response.statusCode = httpResp.statusCode
@@ -120,11 +120,11 @@ export async function httpClient(request, response) {
         })
         .on('end', () => {
           resolve(result)
-          console.log('httpResp响应结束...', url)
+          logger.info('httpResp响应结束...', url)
         })
     })
     httpReq.on('error', (err) => {
-      console.log('@@httpClient request error ', err)
+      logger.error('@@httpClient request error ', err)
     })
     // check request type
     if (!reqBody) {

@@ -15,7 +15,7 @@ const httpAgent = new Agent({ keepAlive: true })
 export async function httpProxy(request, response, encryptTransform, decryptTransform) {
   const { method, headers, urlAddr, passwdInfo, url, fileSize } = request
   const reqId = randomUUID()
-  console.log('@@request_info: ', reqId, method, urlAddr, headers, !!encryptTransform, !!decryptTransform)
+  console.log('@@request_proxy: ', reqId, method, urlAddr, headers, !!encryptTransform, !!decryptTransform)
   // 创建请求
   const options = {
     method,

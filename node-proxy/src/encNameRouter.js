@@ -270,8 +270,6 @@ encNameRouter.all('/api/fs/get', bodyparserMw, preHandleFolderPath, async (ctx, 
   const result = JSON.parse(respBody)
   const { headers, webdavConfig } = ctx.req
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
-  // 设置相应
-  ctx.body = result
   if (passwdInfo) {
     // 修改返回的响应，匹配到要解密，就302跳转到本服务上进行代理流量
     logger.info('@@getFile ', filePath, ctx.req.reqBody, result)
@@ -280,10 +278,10 @@ encNameRouter.all('/api/fs/get', bodyparserMw, preHandleFolderPath, async (ctx, 
     const origin = headers.origin || (headers['x-forwarded-proto'] || ctx.protocol) + '://' + ctx.req.selfHost
     result.data.raw_url = `${origin}/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(filePath)}`
     if (result.data.provider === 'AliyundriveOpen') result.data.provider = 'Local'
-    const showName = convertShowName(passwdInfo.password, passwdInfo.encType, ctx.body.data.name)
-    ctx.body.data.name = showName
+    const showName = convertShowName(passwdInfo.password, passwdInfo.encType, result.data.name)
+    result.data.name = showName
   }
-
+  ctx.body = result
 })
 
 // 处理参数中是目录路径还是文件路径
@@ -394,43 +392,7 @@ const handleDownload = async (ctx, next) => {
 }
 // 直接读取txt文件会用到
 encNameRouter.get(/\/p\/*/, bodyparserMw, handleDownload)
-
-// webdav下载
-const handleWebDavDownload = async (ctx, next) => {
-  const request = ctx.req
-  const { webdavConfig } = ctx.req
-  let filePath = ctx.req.url.split('?')[0]
-  // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
-  request.fileSize = 0
-  // 这里需要处理掉/p 路径
-  if (filePath.indexOf('/d/') === 0) {
-    filePath = filePath.replace('/d/', '/')
-  }
-  if (filePath.indexOf('/p/') === 0) {
-    filePath = filePath.replace('/p/', '/')
-  }
-  const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
-  const folderPath = path.dirname(filePath)
-  const folderRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, folderPath)
-  ctx.req.url = ctx.req.url.replace(folderPath, folderRealPath)
-  ctx.req.urlAddr = ctx.req.urlAddr.replace(folderPath, folderRealPath)
-  if (passwdInfo && passwdInfo.encName) {
-    // reset content-length length
-    delete ctx.req.headers['content-length']
-    // Check whether the file name refers to an encrypted file or a directory
-    const fileName = path.basename(filePath)
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, fileName)
-    // Replace the real-name before downloading
-    ctx.req.url = ctx.req.url.replace(regexPath, `/${realName}$2`)
-    ctx.req.urlAddr = ctx.req.urlAddr.replace(regexPath, `/${realName}$2`)
-    logger.debug('@@download-fileName', filePath, ctx.req.url, fileName, realName)
-    await next()
-    return
-  }
-  await next()
-}
-
-encNameRouter.get(/^\/d\/*/, bodyparserMw, handleWebDavDownload)
+encNameRouter.get(/^\/d\/*/, bodyparserMw, handleDownload)
 
 // restRouter.all(/\/enc-api\/*/, router.routes(), restRouter.allowedMethods())
 export default encNameRouter

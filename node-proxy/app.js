@@ -135,19 +135,6 @@ async function proxyHandle(ctx, next) {
   const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
   console.log('@@webdavpasswdInfo', pathInfo)
 
-  // 如果是上传文件，那么进行流加密，目前只支持webdav上传，如果alist页面有上传功能，那么也可以兼容进来
-  if (request.method.toLocaleUpperCase() === 'PUT' && passwdInfo) {
-    // 兼容macos的webdav客户端x-expected-entity-length
-    const contentLength = headers['content-length'] || headers['x-expected-entity-length'] || 0
-    request.fileSize = contentLength * 1
-    // 需要知道文件长度，等于0 说明不用加密，这个来自webdav奇怪的请求，真坑爹的协议
-    if (request.fileSize === 0) {
-      return await httpProxy(request, response)
-    }
-    console.log('@@@putfile headers', headers)
-    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
-    return await httpProxy(request, response, flowEnc.encryptTransform())
-  }
   // 如果是下载文件，那么就进行判断是否解密
   if ('GET,HEAD,POST'.includes(request.method.toLocaleUpperCase()) && passwdInfo) {
     // 根据文件路径来获取文件的大小
@@ -155,14 +142,6 @@ async function proxyHandle(ctx, next) {
     let filePath = urlPath
     // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
     request.fileSize = 0
-    // 这里需要处理掉/p 路径
-    if (filePath.indexOf('/p/') === 0) {
-      filePath = filePath.replace('/p/', '/')
-    }
-    if (filePath.indexOf('/d/') === 0) {
-      filePath = filePath.replace('/d/', '/')
-    }
-
     // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
     let fileInfo = await getFileInfo(filePath)
     if (fileInfo === null) {
@@ -181,7 +160,7 @@ async function proxyHandle(ctx, next) {
       // 这里要判断是否webdav进行请求, 这里默认就是webdav请求了
       const authorization = request.headers.authorization
       const webdavFileInfo = await getWebdavFileInfo(request.urlAddr, authorization)
-      logger.info('@@webdavFileInfo:', filePath, webdavFileInfo)
+      logger.info('@@webdavFileInfo_size:', filePath, webdavFileInfo)
       if (webdavFileInfo) {
         webdavFileInfo.path = filePath
         // 某些get请求返回的size=0，不要缓存起来
@@ -212,9 +191,9 @@ async function proxyHandleTest(ctx, next) {
   const response = ctx.res
   console.log('@request_data', request.url, request.headers)
   // const result = await http(request, response)
-  let respBody = await httpClient(ctx.req, ctx.res)
-  ctx.status = ctx.res.statusCode
-  ctx.body = respBody
+  let respBody = await httpProxy(ctx.req, ctx.res)
+  // ctx.status = ctx.res.statusCode
+  // ctx.body = respBody
   console.log('@@request_log', request.urlAddr, response.statusCode, response.getHeaderNames())
 }
 
@@ -234,9 +213,6 @@ proxyRouter.all(/^\/dav\/*/, preProxy(alistServer, true), encDavHandle, proxyHan
 proxyRouter.all(/\/*/, preProxy(alistServer, false))
 // check enc filename
 proxyRouter.use(encNameRouter.routes()).use(encNameRouter.allowedMethods())
-
-// 处理文件下载的302跳转
-proxyRouter.get(/^\/d\/*/, proxyHandle)
 
 // that is not work when upload txt file if enable encName
 proxyRouter.put('/api/fs/put-back', async (ctx, next) => {

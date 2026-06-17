@@ -23,7 +23,6 @@ async function sleep(time) {
 const bodyparserMw = bodyparser({ enableTypes: ['json', 'form', 'text'] })
 
 const encNameRouter = new Router()
-const origPrefix = 'orig_'
 
 // 缓存alist的文件信息
 const cacheFileInfoList = async (ctx, next) => {
@@ -34,6 +33,7 @@ const cacheFileInfoList = async (ctx, next) => {
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
   logger.info('@@fs/reqBody', realfoldPath, ctx.req.reqBody)
+  delete ctx.req.headers['content-length']
   const respBody = await httpClient(ctx.req)
   // logger.info('@@@respBody', respBody)
   const result = JSON.parse(respBody)
@@ -63,7 +63,6 @@ const cacheFileInfoList = async (ctx, next) => {
 }
 
 const decryptFileList = async (ctx, next) => {
-  console.log('@@decrypt file name ', ctx.req.url)
   const result = ctx.body
   const { passwdList } = ctx.req.webdavConfig
   if (result.code === 200 && result.data) {
@@ -131,7 +130,7 @@ encNameRouter.put('/api/fs/put', async (ctx, next) => {
       const ext = passwdInfo.encSuffix || path.extname(fileName)
       const encName = encodeName(passwdInfo.password, passwdInfo.encType, fileName)
       const filePath = path.dirname(uploadPath) + '/' + encName + ext
-      console.log('@@@encfileName', fileName, uploadPath, filePath)
+      logger.info('@@encfileName', fileName, uploadPath, filePath)
       headers['file-path'] = encodeURIComponent(filePath)
     }
     const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
@@ -172,6 +171,7 @@ encNameRouter.all('/api/fs/dirs', bodyparserMw, async (ctx, next) => {
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
   logger.info('@@fs/dirs', ctx.req.reqBody)
+  delete ctx.req.headers['content-length']
   const respBody = await httpClient(ctx.req)
   // logger.info('@@@respBody', respBody)
   const result = JSON.parse(respBody)
@@ -196,6 +196,7 @@ encNameRouter.all('/api/fs/mkdir', bodyparserMw, async (ctx, next) => {
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
   logger.info('@@fs/mkdirs', ctx.req.reqBody)
+  delete ctx.req.headers['content-length']
   const respBody = await httpClient(ctx.req)
   // logger.info('@@@respBody', respBody)
   const result = JSON.parse(respBody)
@@ -247,7 +248,6 @@ const preHandleFolderPath = async (ctx, next) => {
   }
   // 请求的是文件则单独处理
   const folderRealPath = convertRealPath(ctx.req.webdavConfig.passwdList, path.dirname(filePath))
-  console.log('@@@get', folderRealPath)
   const { passwdInfo } = pathFindPasswd(webdavConfig.passwdList, filePath)
   if (passwdInfo && passwdInfo.encName) {
     // check fileName is not enc
@@ -255,7 +255,6 @@ const preHandleFolderPath = async (ctx, next) => {
     //  Check if it is a directory
     const realName = convertRealName(passwdInfo.password, passwdInfo.encType, fileName)
     const fpath = folderRealPath + '/' + realName
-    console.log('@@@getFilePath', fpath)
     ctx.request.body.path = fpath
   }
   await next()
@@ -266,6 +265,7 @@ encNameRouter.all('/api/fs/get', bodyparserMw, preHandleFolderPath, async (ctx, 
   const { path: filePath } = ctx.request.body
   // 判断打开的文件是否要解密，要解密则替换url，否则透传
   ctx.req.reqBody = JSON.stringify(ctx.request.body)
+  delete ctx.req.headers['content-length']
   const respBody = await httpClient(ctx.req)
   const result = JSON.parse(respBody)
   const { headers, webdavConfig } = ctx.req

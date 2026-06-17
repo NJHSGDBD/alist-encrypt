@@ -133,7 +133,7 @@ async function proxyHandle(ctx, next) {
   const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
   // 检查路径是否满足加密要求，要拦截的路径可能有中文
   const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
-  console.log('@@passwdInfo', pathInfo)
+  console.log('@@webdavpasswdInfo', pathInfo)
 
   // 如果是上传文件，那么进行流加密，目前只支持webdav上传，如果alist页面有上传功能，那么也可以兼容进来
   if (request.method.toLocaleUpperCase() === 'PUT' && passwdInfo) {
@@ -144,6 +144,7 @@ async function proxyHandle(ctx, next) {
     if (request.fileSize === 0) {
       return await httpProxy(request, response)
     }
+    console.log('@@@putfile headers', headers)
     const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
     return await httpProxy(request, response, flowEnc.encryptTransform())
   }
@@ -203,6 +204,18 @@ async function proxyHandle(ctx, next) {
     return await httpProxy(request, response, null, flowEnc.decryptTransform())
   }
   await httpProxy(request, response)
+}
+// 测试方法
+async function proxyHandleTest(ctx, next) {
+  // req 是nodejs原生对象
+  const request = ctx.req
+  const response = ctx.res
+  console.log('@request_data', request.url, request.headers)
+  // const result = await http(request, response)
+  let respBody = await httpClient(ctx.req, ctx.res)
+  ctx.status = ctx.res.statusCode
+  ctx.body = respBody
+  console.log('@@request_log', request.urlAddr, response.statusCode, response.getHeaderNames())
 }
 
 // 初始化webdav路由，这里可以优化成动态路由，只不过没啥必要，修改配置后直接重启就好了
@@ -264,15 +277,26 @@ proxyRouter.all(new RegExp(alistServer.path), async (ctx, next) => {
       </a>
     </div>`
   )
+  ctx.status = ctx.res.statusCode
+  // ctx.body = respBody 会导致 statusCode = 200，所以上面要进行主动设置
   ctx.body = respBody
 })
 // 使用路由控制
 app.use(proxyRouter.routes()).use(proxyRouter.allowedMethods())
 
 // 配置创建好了，就启动 else {
-const server = http.createServer(app.callback())
+const koaHandler = app.callback()
+const server = http.createServer(koaHandler)
 server.maxConnections = 1000
+
+// 捕获带Expect:100-continue的PUT上传请求直接透传，本机不处理
+server.on('checkContinue', (req, res) => {
+  // 全部交给后端的webdav服务处理，修复群晖webdav的问题
+  koaHandler(req, res)
+})
+
 server.listen(port, () => logger.info('服务启动成功: ' + port))
 setInterval(() => {
   logger.debug('server_connections', server._connections, Date.now())
 }, 600 * 1000)
+

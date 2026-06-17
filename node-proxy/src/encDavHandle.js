@@ -79,7 +79,7 @@ const preHandle = async (ctx, next) => {
       // check dir, convert url
       const reqFileName = path.basename(url)
       // cache source file info, realName has execute encodeUrl()，this '(' '+' can't encodeUrl.
-      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, url)
+      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(url))
       // when the name contain the + , ! ,
       const sourceUrl = path.dirname(url) + '/' + realName
       const sourceFileInfo = await getFileInfo(sourceUrl)
@@ -93,7 +93,6 @@ const preHandle = async (ctx, next) => {
     // decrypt file name
     let respBody = await httpClient(ctx.req, ctx.res)
     const respData = parser.parse(respBody)
-    console.log('@@respData', respData)
     // convert file name for show
     if (respData.multistatus) {
       const respJson = respData.multistatus.response
@@ -109,12 +108,11 @@ const preHandle = async (ctx, next) => {
             // logger.debug('@@getFileNameForShow1 list', passwdInfo.password, fileName, decodeURI(fileName), showName)
             if (fileName) {
               const showXmlName = showName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
-              // 群晖的展示的名字是hrefName，ES文件夹展示的名字是hrefName，各种坑爹客户端
+              // 群晖的展示的名字是hrefName，ES文件夹展示的名字是displayname ，各种坑爹客户端
               const displayname = decodeURI(fileName).replace(/&/g, '&amp;').replace(/</g, '&gt;')
               const hrefName = fileName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
               respBody = respBody.replace(`${hrefName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
               respBody = respBody.replace(`${displayname}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
-              console.log('@@qunhuiaa', respBody)
             }
           }
         })
@@ -131,21 +129,22 @@ const preHandle = async (ctx, next) => {
           const hrefName = fileName.replace(/&/g, '&amp;').replace(/</g, '&gt;')
           respBody = respBody.replace(`${hrefName}</D:href>`, `${encodeURI(showXmlName)}</D:href>`)
           respBody = respBody.replace(`${displayname}</D:displayname>`, `${decodeURI(showXmlName)}</D:displayname>`)
-          console.log('@@qunhui12aa', displayname, showXmlName, encodeURI(showXmlName), respBody)
         }
       }
     }
     // 检查数据兼容的问题，优先XML对比。
-    logger.debug('@@respJsxml', respBody, ctx.headers)
+    // logger.debug('@@respJsxml', respBody, ctx.headers)
     // const resultBody = parser.parse(respBody)
     // logger.debug('@@respJSONData2', ctx.res.statusCode, JSON.stringify(resultBody))
 
+    // 而rclone遇到404只能使用 ctx.res.end(respBody)，这里有待验证
     if (ctx.res.statusCode === 404) {
       // fix rclone propfind 404 ，because rclone copy will get error 501
+      ctx.respond = false
       ctx.res.end(respBody)
       return
     }
-    // fix webdav 401 bug，群晖遇到401不能使用 ctx.res.end(respBody)，而rclone遇到404只能使用ctx.res.end(respBody),神奇的bug
+    // 因为ctx.body 会重新计算响应的Content-length，此时respBody发生了变化，需要调整header的长度
     ctx.status = ctx.res.statusCode
     ctx.body = respBody
     return
@@ -154,33 +153,34 @@ const preHandle = async (ctx, next) => {
   // copy or move file
   if ('COPY,MOVE'.includes(request.method.toLocaleUpperCase())) {
     if (passwdInfo && passwdInfo.encName) {
-      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURIComponent(request.url))
-      const distName = convertRealName(passwdInfo.password, passwdInfo.encType, request.headers.destination)
+      const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(request.url))
+      const distName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(request.headers.destination))
       request.headers.destination = path.dirname(request.headers.destination) + '/' + encodeURI(distName)
       // 直接获取用户名
       request.url = path.dirname(request.url) + '/' + encodeURI(realName)
-      console.log('2@encodeURI(realName)', path.dirname(request.url), realName, encodeURI(realName))
       request.urlAddr = path.dirname(request.urlAddr) + '/' + encodeURI(realName)
     }
     let destination = request.headers.destination
     const destUrl = new URL(destination)
     const userName = destUrl.username
-    const addrUrl = destination.substring(destination.indexOf(path.dirname(request.url)), destination.length)
+    // destination，获取/dav/xxx的路径
+    const pathname = destUrl.pathname
     if (userName) {
-      request.headers.destination = `http://${userName}@${request.headers.host}` + addrUrl
+      request.headers.destination = `http://${userName}@${request.headers.host}` + pathname
     } else {
-      request.headers.destination = `http://${request.headers.host}` + addrUrl
+      request.headers.destination = `http://${request.headers.host}` + pathname
     }
-    console.log('@@move_dest', destination, request.headers.destination)
-    return await httpClient(request, response)
+    logger.info('@@move_dest', destination, request.headers.destination)
+    const body = await httpClient(request, response)
+    ctx.status = ctx.res.statusCode
+    ctx.body = body
   }
 
   // upload file
   if ('GET,PUT,DELETE'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
     const url = request.url
     // check dir, convert url
-    const fileName = path.basename(url)
-    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, url)
+    const realName = convertRealName(passwdInfo.password, passwdInfo.encType, decodeURI(url))
     // maybe from aliyundrive, check this req url while get file list from enc folder
     if (url.endsWith('/') && 'GET,DELETE'.includes(request.method.toLocaleUpperCase())) {
       let respBody = await httpClient(ctx.req, ctx.res)
@@ -211,10 +211,13 @@ const preHandle = async (ctx, next) => {
     // cache file before upload in next(), rclone cmd 'copy' will PROPFIND this file when the file upload success right now
     const contentLength = request.headers['content-length'] || request.headers['x-expected-entity-length'] || 0
     // 注意这里缓存的路径，不要跟上面cacheWebdavFileInfo 冲突, 不然size会归0
-    const fileDetail = { path: url, name: fileName, is_dir: false, size: contentLength }
-    logger.info('@@@put url', url, fileName)
-    // 在页面上传文件，rclone会重复上传，所以要进行缓存文件信息，也不能在next() 因为rclone copy命令会出异常
-    await cacheFileInfo(fileDetail)
+    if ('PUT'.includes(request.method.toLocaleUpperCase()) && passwdInfo && passwdInfo.encName) {
+      // 上传之后要立刻缓存起来，把加密的名字对应的路径缓存起来
+      const fileDetail = { path: request.url, name: realName, is_dir: false, size: contentLength }
+      logger.info('@@getput_url', request.url, realName, request.headers)
+      // 在页面上传文件，rclone会重复上传，所以要进行缓存文件信息,让他能找到文件信息，也不能在next() 因为rclone copy命令会出异常
+      await cacheFileInfo(fileDetail)
+    }
   }
   await next()
 }

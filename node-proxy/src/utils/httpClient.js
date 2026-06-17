@@ -44,7 +44,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
       } else if (httpResp.headers['content-range'] && httpResp.statusCode === 200) {
         response.statusCode = 206
       }
-      // 设置headers
+      // 不能用response.writeHead(statusCode, res.header),下面还有代码response.setHeader，不然会报错
       for (const key in httpResp.headers) {
         response.setHeader(key, httpResp.headers[key])
       }
@@ -55,7 +55,7 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
         if (fileName) {
           let cd = response.getHeader('content-disposition')
           cd = cd ? cd.replace(/filename\*?=[^=;]*;?/g, '') : ''
-          console.log('解密文件名...', reqId, fileName)
+          console.log('@@httpproxy解密文件名...', reqId, fileName)
           response.setHeader('content-disposition', cd + `filename*=UTF-8''${encodeURIComponent(fileName)};`)
         }
       }
@@ -88,9 +88,9 @@ export async function httpProxy(request, response, encryptTransform, decryptTran
 export async function httpClient(request, response) {
   // urlAddr 包含http
   const { method, headers, urlAddr, reqBody, url } = request
-  // 请求reqBody已被篡改，由http客户端自己调整length
-  delete headers['content-length']
-  console.log('@@request_client: ', method, urlAddr, headers)
+  // 请求reqBody已被篡改，由调用者调整length或删除，不然影响webdav
+  // delete headers['content-length']
+  console.log('@@request_client: ', method, urlAddr, headers, reqBody)
   // 创建请求
   const options = {
     method,
@@ -104,10 +104,14 @@ export async function httpClient(request, response) {
     const httpReq = httpRequest.request(urlAddr, options, async (httpResp) => {
       console.log('@@statusCode', httpResp.statusCode, httpResp.headers)
       if (response) {
+        // 外部的ctx.body=OK会导致statusCode=200，外部方法要执行ctx.status = ctx.res.statusCode
         response.statusCode = httpResp.statusCode
         for (const key in httpResp.headers) {
           response.setHeader(key, httpResp.headers[key])
         }
+        // 不能用 response.writeHead(statusCode, res.header)
+        // 会导致直接响应了Content-length: 123, 外部修改的body长度变化后就没法使用，而且外部需要要用ctx.body
+        // 因为ctx.body 会重新计算响应的Content-length
       }
       let result = ''
       httpResp

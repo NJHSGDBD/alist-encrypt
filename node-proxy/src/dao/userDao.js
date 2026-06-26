@@ -1,4 +1,4 @@
-import levelDB from '@/utils/levelDB'
+import levelDB from '../utils/levelDB'
 
 export const userTable = 'userTable'
 
@@ -28,7 +28,7 @@ export async function cacheUserToken(token, userInfo) {
 }
 
 export async function addUserInfo(userInfo) {
-  const value = await levelDB.getValue(userTable) || {}
+  const value = (await levelDB.getValue(userTable)) || {}
   value[userInfo.username] = userInfo
   await levelDB.setValue(userTable, value)
 }

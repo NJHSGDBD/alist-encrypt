@@ -1,5 +1,5 @@
 'use strict'
-import { convertFile } from '@/utils/convertFile'
+import { convertFile } from './src/utils/convertFile'
 const arg = process.argv.slice(2)
 if (arg.length > 1) {
   // convertFile command
@@ -10,7 +10,7 @@ if (arg.length > 1) {
 import Koa from 'koa'
 import Router from 'koa-router'
 import http from 'http'
-import crypto from 'crypto'
+
 import path from 'path'
 import { httpProxy, httpClient } from '@/utils/httpClient'
 import bodyparser from 'koa-bodyparser'
@@ -23,8 +23,6 @@ import encApiRouter from '@/router'
 import encNameRouter from '@/encNameRouter'
 import encDavHandle from '@/encDavHandle'
 
-import { cacheFileInfo, getFileInfo } from '@/dao/fileDao'
-import { getWebdavFileInfo } from '@/utils/webdavClient'
 import staticServer from 'koa-static'
 import { logger } from '@/common/logger'
 import { encodeName } from '@/utils/commonUtil'
@@ -127,90 +125,24 @@ async function proxyHandle(ctx, next) {
   const request = ctx.req
   const response = ctx.res
   const { passwdList } = request.webdavConfig
-  const { headers } = request
-  // 要定位请求文件的位置 bytes=98304-
-  const range = headers.range
-  const start = range ? range.replace('bytes=', '').split('-')[0] * 1 : 0
-  // 检查路径是否满足加密要求，要拦截的路径可能有中文
-  const { passwdInfo, pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
-  logger.debug('@@@@passwdInfo', pathInfo)
-  // fix webdav move file
-  if (request.method.toLocaleUpperCase() === 'MOVE' && headers.destination) {
-    let destination = headers.destination
-    destination = request.serverAddr + destination.substring(destination.indexOf(path.dirname(request.url)), destination.length)
-    request.headers.destination = destination
-  }
-  // 如果是上传文件，那么进行流加密，目前只支持webdav上传，如果alist页面有上传功能，那么也可以兼容进来
-  if (request.method.toLocaleUpperCase() === 'PUT' && passwdInfo) {
-    // 兼容macos的webdav客户端x-expected-entity-length
-    const contentLength = headers['content-length'] || headers['x-expected-entity-length'] || 0
-    request.fileSize = contentLength * 1
-    // 需要知道文件长度，等于0 说明不用加密，这个来自webdav奇怪的请求
-    if (request.fileSize === 0) {
-      return await httpProxy(request, response)
-    }
-    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
-    return await httpProxy(request, response, flowEnc.encryptTransform())
-  }
-  // 如果是下载文件，那么就进行判断是否解密
-  if ('GET,HEAD,POST'.includes(request.method.toLocaleUpperCase()) && passwdInfo) {
-    // 根据文件路径来获取文件的大小
-    const urlPath = ctx.req.url.split('?')[0]
-    let filePath = urlPath
-    // 如果是alist的话，那么必然有这个文件的size缓存（进过list就会被缓存起来）
-    request.fileSize = 0
-    // 这里需要处理掉/p 路径
-    if (filePath.indexOf('/p/') === 0) {
-      filePath = filePath.replace('/p/', '/')
-    }
-    if (filePath.indexOf('/d/') === 0) {
-      filePath = filePath.replace('/d/', '/')
-    }
-    // 尝试获取文件信息，如果未找到相应的文件信息，则对文件名进行加密处理后重新尝试获取文件信息
-    let fileInfo = await getFileInfo(filePath);
 
-    if (fileInfo === null) {
-      const rawFileName = decodeURIComponent(path.basename(filePath));
-      const ext = path.extname(rawFileName);
-      const encodedRawFileName = encodeURIComponent(rawFileName);
-      const encFileName = encodeName(passwdInfo.password, passwdInfo.encType, rawFileName);
-      const newFileName = encFileName + ext;
-    
-      filePath = filePath.replace(encodedRawFileName, newFileName);
-      request.urlAddr = request.urlAddr.replace(encodedRawFileName, newFileName);
-    
-      fileInfo = await getFileInfo(filePath);
-    }
-    logger.info('@@getFileInfo:', filePath, fileInfo, request.urlAddr)
-    if (fileInfo) {
-      request.fileSize = fileInfo.size * 1
-    } else if (request.headers.authorization) {
-      // 这里要判断是否webdav进行请求, 这里默认就是webdav请求了
-      const authorization = request.headers.authorization
-      const webdavFileInfo = await getWebdavFileInfo(request.urlAddr, authorization)
-      logger.info('@@webdavFileInfo:', filePath, webdavFileInfo)
-      if (webdavFileInfo) {
-        webdavFileInfo.path = filePath
-        // 某些get请求返回的size=0，不要缓存起来
-        if (webdavFileInfo.size * 1 > 0) {
-          cacheFileInfo(webdavFileInfo)
-        }
-        request.fileSize = webdavFileInfo.size * 1
-      }
-    }
-    request.passwdInfo = passwdInfo
-    // logger.info('@@@@request.filePath ', request.filePath, result)
-    if (request.fileSize === 0) {
-      // 说明不用加密
-      return await httpProxy(request, response)
-    }
-    const flowEnc = new FlowEnc(passwdInfo.password, passwdInfo.encType, request.fileSize)
-    if (start) {
-      await flowEnc.setPosition(start)
-    }
-    return await httpProxy(request, response, null, flowEnc.decryptTransform())
-  }
+  // 检查路径是否满足加密要求，要拦截的路径可能有中文
+  const { pathInfo } = pathFindPasswd(passwdList, decodeURIComponent(request.url))
+  logger.info('@@webdavpasswdInfo', pathInfo)
+
   await httpProxy(request, response)
+}
+// 测试方法
+async function proxyHandleTest(ctx, next) {
+  // req 是nodejs原生对象
+  const request = ctx.req
+  const response = ctx.res
+  logger.info('@request_data', request.url, request.headers)
+  // const result = await http(request, response)
+  let respBody = await httpProxy(ctx.req, ctx.res)
+  // ctx.status = ctx.res.statusCode
+  // ctx.body = respBody
+  logger.info('@@request_log', request.urlAddr, response.statusCode, response.getHeaderNames())
 }
 
 // 初始化webdav路由，这里可以优化成动态路由，只不过没啥必要，修改配置后直接重启就好了
@@ -229,74 +161,6 @@ proxyRouter.all(/^\/dav\/*/, preProxy(alistServer, true), encDavHandle, proxyHan
 proxyRouter.all(/\/*/, preProxy(alistServer, false))
 // check enc filename
 proxyRouter.use(encNameRouter.routes()).use(encNameRouter.allowedMethods())
-
-// 处理文件下载的302跳转
-proxyRouter.get(/^\/d\/*/, proxyHandle)
-// 文件直接下载
-proxyRouter.get(/^\/p\/*/, proxyHandle)
-
-// 处理在线视频播放的问题，修改它的返回播放地址 为本代理的地址。
-proxyRouter.all('/api/fs/get', bodyparserMw, async (ctx, next) => {
-  const { path } = ctx.request.body
-  // 判断打开的文件是否要解密，要解密则替换url，否则透传
-  ctx.req.reqBody = JSON.stringify(ctx.request.body)
-
-  const respBody = await httpClient(ctx.req)
-  const result = JSON.parse(respBody)
-  const { headers } = ctx.req
-  const { passwdInfo } = pathFindPasswd(alistServer.passwdList, path)
-
-  if (passwdInfo) {
-    // 修改返回的响应，匹配到要解密，就302跳转到本服务上进行代理流量
-    logger.info('@@getFile ', path, ctx.req.reqBody, result)
-    const key = crypto.randomUUID()
-    await levelDB.setExpire(key, { redirectUrl: result.data.raw_url, passwdInfo, fileSize: result.data.size }, 60 * 60 * 72) // 缓存起来，默认3天，足够下载和观看了
-    result.data.raw_url = `${
-      headers.origin || (headers['x-forwarded-proto'] || ctx.protocol) + '://' + ctx.req.selfHost
-    }/redirect/${key}?decode=1&lastUrl=${encodeURIComponent(path)}`
-    if (result.data.provider === 'AliyundriveOpen') result.data.provider = 'Local'
-  }
-  ctx.body = result
-})
-
-// 缓存alist的文件信息
-proxyRouter.all('/api/fs/list', bodyparserMw, async (ctx, next) => {
-  const { path } = ctx.request.body
-  // 判断打开的文件是否要解密，要解密则替换url，否则透传
-  ctx.req.reqBody = JSON.stringify(ctx.request.body)
-  const respBody = await httpClient(ctx.req)
-  // logger.info('@@@respBody', respBody)
-  const result = JSON.parse(respBody)
-  if (!result.data) {
-    ctx.body = result
-    return
-  }
-  const content = result.data.content
-  if (!content) {
-    ctx.body = result
-    return
-  }
-  for (let i = 0; i < content.length; i++) {
-    const fileInfo = content[i]
-    fileInfo.path = path + '/' + fileInfo.name
-    // 这里要注意闭包问题，mad
-    // logger.debug('@@cacheFileInfo', fileInfo.path)
-    cacheFileInfo(fileInfo)
-    // aliyun images thumb
-    if(fileInfo.thumb.indexOf('https://cn-beijing-data.aliyundrive.net') > -1 &&
-      fileInfo.name.indexOf('.mp4') == -1){
-      // logger.info('@@@thumb',fileInfo.thumb)
-      // logger.info('@@@origin',ctx.req.origin)
-      fileInfo.thumb = ctx.req.origin + '/d' + fileInfo.path + '?sign=' + fileInfo.sign
-    }
-  }
-  // waiting cacheFileInfo a moment
-  if (content.length > 100) {
-    await sleep(50)
-  }
-  logger.info('@@@fs/list', content.length)
-  ctx.body = result
-})
 
 // that is not work when upload txt file if enable encName
 proxyRouter.put('/api/fs/put-back', async (ctx, next) => {
@@ -337,15 +201,26 @@ proxyRouter.all(new RegExp(alistServer.path), async (ctx, next) => {
       </a>
     </div>`
   )
+  ctx.status = ctx.res.statusCode
+  // ctx.body = respBody 会导致 statusCode = 200，所以上面要进行主动设置
   ctx.body = respBody
 })
 // 使用路由控制
 app.use(proxyRouter.routes()).use(proxyRouter.allowedMethods())
 
 // 配置创建好了，就启动 else {
-const server = http.createServer(app.callback())
+const koaHandler = app.callback()
+const server = http.createServer(koaHandler)
 server.maxConnections = 1000
+
+// 捕获带Expect:100-continue的PUT上传请求直接透传，本机不处理
+server.on('checkContinue', (req, res) => {
+  // 全部交给后端的webdav服务处理，修复群晖webdav的问题
+  koaHandler(req, res)
+})
+
 server.listen(port, () => logger.info('服务启动成功: ' + port))
 setInterval(() => {
   logger.debug('server_connections', server._connections, Date.now())
 }, 600 * 1000)
+

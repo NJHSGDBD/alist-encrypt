@@ -16,7 +16,7 @@
           </el-form-item>
           <el-form-item prop="password" label="主目录">
             <el-input v-model="configFormTemp.path" style="max-width: 260px" placeholder="5244" />
-            <span color="gray" style="font-size: 12px; margin-left: 12px">修改后重启生效</span>
+            <span color="gray" style="font-size: 12px; margin: 10px">表达式推荐：^/onedrive-folder/.*， 修改后重启生效</span>
           </el-form-item>
           <el-form-item prop="enable" label="开启">
             <el-switch
@@ -28,17 +28,31 @@
           <el-form-item label="密码设置">
             <el-button type="success" @click="addPasswd">添加</el-button>
           </el-form-item>
-          <div v-for="(item, index) in configFormTemp.passwdList" :key="item.id">
-            <el-radio-group v-model="item.encType" style="margin: 0 25px" size="small">
-              <!-- <el-radio label="mix" border>MIX</el-radio> -->
-              <el-radio label="rc4" border>RC4</el-radio>
-              <el-radio label="aesctr" border>AES-CTR(新)</el-radio>
-            </el-radio-group>
-            开启
-            <el-switch v-model="item.enable" class="ml-2" style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949" />
+          
+          <div v-for="(item, index) in configFormTemp.passwdList" :key="item.id" style="max-width: 720px; margin: 12px 5px; padding: 10px; border: 1px solid red" >
+            <span>配置 {{ index + 1 }}</span>
+            <el-switch v-model="item.enable" class="mr-2 ml-2" style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949" />
+            <span >{{item.enable ? '开启' : '已关'}}</span>
             <el-button type="danger" style="margin: 5px 20px" :icon="Delete" circle @click="delPasswd(index)" />
+            <el-form-item label="算法">
+              <el-radio-group v-model="item.encType" style="margin: 0px 5px" size="small">
+                <!-- <el-radio label="mix" border>MIX</el-radio> -->
+                <el-radio label="aesctr" border>AES-CTR</el-radio>
+                <el-radio label="chacha20" border>CHACHA20</el-radio>
+                <el-radio label="rc4" border>RC4(废弃)</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            
             <el-form-item label="密码">
               <el-input v-model="item.password" style="max-width: 260px; margin-right: 10px" placeholder="12341234" />
+            </el-form-item>
+            <el-form-item label="目录名">
+              加密
+              <el-switch
+                v-model="item.encFolder"
+                class="ml-2"
+                style="margin-right: 10px; --el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
+              />
             </el-form-item>
             <el-form-item label="文件名">
               加密
@@ -55,6 +69,7 @@
             </el-form-item>
             <el-form-item label="路径">
               <el-input v-model="item.encPath" style="max-width: 350px; margin-right: 10px" placeholder="多个路径逗号，隔开" />
+              <span color="gray" style="font-size: 13px; margin: 10px">例如: encrypt/.* 正则表达式</span>
             </el-form-item>
           </div>
         </el-form>
@@ -106,7 +121,7 @@ const configList = reactive([])
 const configFormTemp = reactive({})
 const configTemp = {
   name: 'webdav',
-  path: '/webdav/*',
+  path: '^/onedrive-dav/.*',
   describe: 'webdav服务',
   serverHost: '192.168.1.100',
   serverPort: '5244',
@@ -117,11 +132,12 @@ const configTemp = {
       id: Math.random(),
       password: '123456',
       encType: 'aesctr',
-      enable: false,
+      enable: true,
       encName: false, // encrypt file name
+      encFolder: false, // encrypt file name
       encSuffix: '', //
       describe: 'my video',
-      encPath: '/aliyun/encrypt/*'
+      encPath: '/onedrive/encrypt/.*'
     }
   ]
 }
@@ -135,6 +151,8 @@ const addPasswd = () => {
     password: '123456',
     encType: 'aesctr',
     enable: true,
+    encName: false, // encrypt file name
+    encFolder: false, // encrypt file name
     describe: 'my video',
     encPath: '/dav/encrypt/*'
   })

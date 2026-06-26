@@ -5,6 +5,7 @@ class AesCTR {
   constructor(password, sizeSalt) {
     this.password = password
     this.sizeSalt = sizeSalt + ''
+    this.passwdOutward = password
     // check base64
     if (password.length !== 32) {
       this.passwdOutward = crypto.pbkdf2Sync(this.password, 'AES-CTR', 1000, 16, 'sha256').toString('hex')

@@ -1,8 +1,9 @@
-import levelDB from '@/utils/levelDB'
+import levelDB from '../utils/levelDB'
 
 export const configTable = 'configTable'
 
 export async function initConfigTable() {
+  console.log('init config')
 }
 // alist配置
 const alistConfigKey = '_alist_config_key'

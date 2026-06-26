@@ -14,8 +14,8 @@ if (!fs.existsSync(getConfPath())) {
 }
 // 从环境变量上读取配置信息，docker首次启动时候可以直接进行配置
 const serverAddr = process.env.ALIST_HOST
-const serverHost = '192.168.1.100'
-const serverPort = 5244
+let serverHost = '192.168.1.100'
+let serverPort = 5244
 if (serverAddr && serverAddr.indexOf(':') > 6) {
   serverHost = serverAddr.split(':')[0]
   serverPort = serverAddr.split(':')[1]
@@ -33,9 +33,10 @@ const alistServerTemp = {
     {
       password: '123456',
       describe: 'my video', // 加密内容描述
-      encType: 'aesctr', // 算法类型，可选mix，rc4，默认aesctr
+      encType: 'aesctr', // 算法类型: aesctr（默认）、rc4 
       enable: true, // enable encrypt
       encName: false, // encrypt file name
+      encFolder: false,
       encSuffix: '', //
       encPath: ['encrypt_folder/*', 'movie_encrypt/*'], // 路径支持正则表达式，常用的就是 尾巴带*，此目录的所文件都加密
     },

@@ -3,13 +3,20 @@
 import MixEnc from './mixEnc'
 import Rc4Md5 from './rc4Md5'
 import AesCTR from './aesCTR'
+import ChaCha20 from './chaCha20'
 
 const cachePasswdOutward = {}
 
 class FlowEnc {
-  constructor(password, encryptType = 'mix', fileSize = 0) {
+  constructor(password, encryptType = 'chacha20', fileSize = 0) {
     fileSize *= 1
     let encryptFlow = null
+    // 这里可以优化，把cachePasswdOutward的值替换password
+    if (encryptType === 'chacha20') {
+      console.log('@@chacha20', encryptType)
+      encryptFlow = new ChaCha20(password, fileSize)
+      this.passwdOutward = encryptFlow.passwdOutward
+    }
     if (encryptType === 'mix') {
       console.log('@@mix', encryptType)
       encryptFlow = new MixEnc(password, fileSize)

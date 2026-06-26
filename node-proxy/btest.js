@@ -1,9 +1,8 @@
 import crypto from 'crypto'
+import { pathToRegexp } from 'path-to-regexp'
 import path from 'path'
-import { logger } from '@/common/logger'
-import ChaCha20Poly from '@/utils/chaCha20Poly'
 import { chownSync, copyFileSync } from 'fs'
-import CRCN from '@/utils/crc6-8'
+import aesCTR from '@/utils/aesCTR'
 import fs from 'fs'
 import { encodeName, decodeName } from '@/utils/commonUtil'
 import { getWebdavFileInfo } from '@/utils/webdavClient'
@@ -18,7 +17,6 @@ getWebdavFileInfo(
 console.log('@@dd', path.isAbsolute('/ddf'))
 const content = 'fileInfoTable_/dav/aliyun%Evfnnz%BA%91%E7%9B%98/atest/12%E5%A4%A7%E5%A4%B4%E7%9A%84%E6%97%8F%E6%96%87%E4%BB%B6_8Xn78oZjs7VSr~qjdzVH4/4'
 
-console.log('@@content', decodeURIComponent(content))
 const reg = 'test'
 
 const enw = content.replace(new RegExp(reg, 'g'), '@@')
@@ -31,4 +29,47 @@ const encname = encodeName('123456', 'aesctr', '3wd.tex')
 const decname = decodeName('123456', 'aesctr', encname)
 console.log('##', ext, decname)
 
-logger.debug('dfeeeef')
+
+const path2 = "/var/test/abc/test/fold";
+
+// 匹配 test/ 后面的所有内容（你要的就是这个）
+const regex = "(test/.*)";
+const match = path2.match(new RegExp(regex));
+
+const result = match ? match[1] : null;
+console.log('@@', result); // 输出：abc/test/fold
+
+// 判断是否为匹配的路径
+function pathExec(encPath, url) {
+  for (const filePath of encPath) {
+    const result = pathToRegexp(new RegExp(filePath)).exec(url)
+    if (result) {
+      console.log('@@@res', result)
+      return result
+    }
+  }
+  return null
+}
+const fileDate = new Uint8Array(32).fill(1)
+
+const passwdOutward = crypto.pbkdf2Sync('12341234', 'AES-CTR', 1000, 16, 'sha256').toString('hex')
+const passwdSalt = passwdOutward + '11164'
+const key = crypto.createHash('md5').update(passwdSalt).digest()
+const iv = crypto.createHash('md5').update('11164').digest()
+const cipher = crypto.createCipheriv('aes-128-ctr', key, iv)
+const encdata = cipher.update(fileDate)
+
+
+
+const dd = new aesCTR('12341234', '11164')
+dd.setPosition(64)
+console.log('@@@iv', dd.iv.toString('hex'))
+
+console.log('@pass', passwdOutward, Buffer.from(encdata).toString('hex'))
+
+const buf = Buffer.from([0x12, 0x34, 0x56, 0x78, 0x32, 0x24, 0x16, 0x78]);
+console.log(buf.length, buf.readUInt32BE(1).toString(16));
+
+const d = pathExec(['test/.*', 'abc/.*'], '/adfadf/testd/test/abc/fdf')
+
+// 输出：https://xxx.com/新内容?a=1&b=2

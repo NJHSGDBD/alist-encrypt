@@ -15,24 +15,39 @@
         <el-switch v-model="alistConfigForm.https" class="ml-2" style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949" />
         <span color="gray" style="font-size: 12px; margin-left: 12px">默认http</span>
       </el-form-item>
-
-      <el-form-item label="密码设置">
+      <div v-lang class="mt-30px font-bold mb-10px">
+        密码配置
         <el-button type="success" @click="addPasswd">添加</el-button>
-      </el-form-item>
-      <div v-for="(item, index) in alistConfigForm.passwdList" :key="item.id">
-        配置 {{ index + 1 }}
+      </div>
+      <div
+        v-for="(item, index) in alistConfigForm.passwdList"
+        :key="item.id"
+        style="max-width: 720px; margin: 12px 5px; padding: 10px; border: 1px solid red"
+      >
+        <span>配置 {{ index + 1 }}</span>
+        <el-switch v-model="item.enable" class="mr-2 ml-2" style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949" />
+        <span >{{item.enable ? '开启' : '已关'}}</span>
+        <el-button type="danger" style="margin: 13px" :icon="Delete" circle @click="delPasswd(index)" />
         <el-form-item label="算法">
           <el-radio-group v-model="item.encType" style="margin: 0px 5px" size="small">
             <!-- <el-radio label="mix" border>MIX</el-radio> -->
             <el-radio label="aesctr" border>AES-CTR</el-radio>
-            <el-radio label="rc4" border>RC4</el-radio>
+            <el-radio label="chacha20" border>CHACHA20</el-radio>
+            <el-radio label="rc4" border>RC4(废弃)</el-radio>
           </el-radio-group>
-          开启
-          <el-switch v-model="item.enable" class="ml-2" style="--el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949" />
-          <el-button type="danger" style="margin: 0px 20px" :icon="Delete" circle @click="delPasswd(index)" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input v-model="item.password" style="max-width: 260px; margin-right: 10px" placeholder="12341234" />
+        </el-form-item>
+        <el-form-item label="目录名">
+          加密
+          <el-switch
+            v-model="item.encFolder"
+            class="ml-2"
+            style="margin-right: 10px; --el-switch-on-color: #13ce66; --el-switch-off-color: #ff4949"
+          />
+          <!-- 后缀
+          <el-input v-model="item.encSuffix" style="max-width: 150px; margin-left: 10px" placeholder="默认原文件名后缀" /> -->
         </el-form-item>
         <el-form-item label="文件名">
           加密
@@ -45,10 +60,10 @@
         </el-form-item>
         <el-form-item label="路径">
           <el-input v-model="item.encPath" style="max-width: 350px; margin-right: 10px" placeholder="多个目录用逗号，隔开" />
-          <span color="gray" style="font-size: 13px; margin-left: 12px">example: encrypt/*</span>
+          <span color="gray" style="font-size: 13px; margin: 10px">例如: encrypt/.* 正则表达式</span>
         </el-form-item>
         <el-form-item label="子密码:">
-          根据文件夹的名字自动识别文件夹的秘钥
+          根据子文件夹名 动态切换密码
           <el-button type="success" size="small" style="margin-left: 10px" @click="checkFoldName(item)">获取</el-button>
         </el-form-item>
         <br />
@@ -56,38 +71,42 @@
       <el-form-item>
         <el-button type="primary" @click="saveAlistConfig">保存</el-button>
       </el-form-item>
-      <el-dialog v-model="dialogFolderFormVisible" title="获取文件夹密文" style="min-width: 320px">
+      <el-dialog v-model="dialogFolderFormVisible" title="生成文件夹密文" style="min-width: 320px;font-weight: bold">
         <el-tabs v-model="activeName" class="demo-tabs" @tab-click="handleClick">
           <el-tab-pane label="加密名字" name="encode">
             <el-form :model="folderForm">
-              <el-form-item prop="username" label="文件夹名称">
+              <el-form-item prop="folderName" label="文件夹备注">
                 <el-input v-model="folderForm.folderName" style="max-width: 260px" placeholder="folder name" />
+                <span color="gray" style="font-size: 13px; margin-left: 12px">不能有下划线</span>
               </el-form-item>
-              <el-form-item prop="username" label="算法类型">
+              <el-form-item prop="enctype" label="算法类型">
                 <el-radio-group v-model="folderForm.folderEncType" style="margin: 0 15px" size="small">
                   <!-- <el-radio label="mix" border>MIX</el-radio> -->
                   <el-radio label="aesctr" border>AES-CTR</el-radio>
-                  <el-radio label="rc4" border>RC4</el-radio>
+                  <el-radio label="chacha20" border>chacha20</el-radio>
+                  <el-radio label="rc4" border>RC4(废弃)</el-radio>
                 </el-radio-group>
               </el-form-item>
-              <el-form-item prop="username" label="文件夹密码">
+              <el-form-item prop="outpasswd" label="子目录密码">
                 <el-input v-model="folderForm.folderPasswd" style="max-width: 260px" placeholder="123456" />
               </el-form-item>
-              <el-form-item prop="username" label="加密结果">
+              <span style="color: gray;font-size: 12px;">使用下面名字的文件夹，则按此密码进行解密文件</span>
+              <el-form-item prop="resultpw" label="文件夹密文">
                 {{ folderForm.folderNameEnc }}
               </el-form-item>
-              <el-button type="success" @click="encodeFoldName">查询</el-button>
+              
+              <el-button type="success" @click="encodeFoldName">生成</el-button>
             </el-form>
           </el-tab-pane>
           <el-tab-pane label="解密名字" name="decode">
             <el-form :model="folderForm">
-              <el-form-item prop="username" label="文件夹名称">
+              <el-form-item prop="foldername" label="文件夹密文">
                 <el-input v-model="folderForm.folderNameEnc" style="max-width: 260px" placeholder="folder name" />
               </el-form-item>
-              <el-form-item prop="username" label="算法类型">
+              <el-form-item prop="enctype" label="算法类型">
                 {{ folderForm.folderEncType }}
               </el-form-item>
-              <el-form-item prop="username" label="文件夹密码">
+              <el-form-item prop="outpasswd" label="文件夹密码">
                 {{ folderForm.folderPasswd }}
               </el-form-item>
               <el-button type="success" @click="decodeFoldName">解密</el-button>
@@ -126,7 +145,7 @@ const folderForm = reactive({
   encType: 'aesctr',
   folderPasswd: '123456', // 文件夹密码
   folderNameEnc: '',
-  folderEncType: 'rc4',
+  folderEncType: 'aesctr',
   password: '' // base password
 })
 
@@ -144,6 +163,7 @@ const alistConfigForm = reactive({
       encType: 'aesctr',
       enable: false,
       encName: false, // encrypt file name
+      encFolder: false, // encrypt file name
       encSuffix: '', //
       describe: 'my video',
       encPath: '333'
@@ -154,12 +174,14 @@ const refSearchForm = $ref()
 // 添加密码配置
 const addPasswd = () => {
   alistConfigForm.passwdList.push({
-    id: Math.random(),
+    id: crypto.randomUUID(),
     password: '123456',
     encType: 'aesctr',
     enable: true,
+    encName: true, // encrypt file name
+    encFolder: false, // encrypt file name
     describe: 'my video',
-    encPath: '/aliyun/encrypt/*'
+    encPath: '/aliyun/encrypt/.*'
   })
 }
 
@@ -184,7 +206,7 @@ const decodeFoldName = async () => {
 }
 
 const saveAlistConfig = () => {
-  saveAlistConfigReq(alistConfigForm).then(res =>{
+  saveAlistConfigReq(alistConfigForm).then((res) => {
     ElMessage.success(res.msg)
   })
 }

@@ -1,25 +1,34 @@
+# 需要在项目Setting->Secrets and variables->Actions->Repository secrets中中添加 DOCKERHUB_USERNAME DOCKERHUB_PASSWD
 name: release_docker
 
 on:
   workflow_dispatch:
   push:
-    branches: ["main","release"]
+    branches: ["main", "release"]
     paths:
-      - 'node-proxy/**'
+      - "node-proxy/**"
+      - ".github/workflows/build_docker.yml"
+
   pull_request:
-    branches: [ 'main' ]
+    branches: ["main"]
     paths:
-      - 'node-proxy/**'
+      - "node-proxy/**"
 
 jobs:
   release_docker:
     name: Release Docker
     runs-on: ubuntu-latest
     steps:
+      - name: Get current date for tag
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y%m%d')"
+
       - name: Checkout
         uses: actions/checkout@v3
       - name: Setup Node.js
         uses: actions/setup-node@v3
+        with:
+          node-version: 16.20.2
       - name: Checkout
         uses: actions/checkout@v3
       - name: Build
@@ -33,12 +42,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWD }}
+
       - name: Build and push
         id: docker_build
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64,linux/arm/v7
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/alist-encrypt:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/alist-encrypt:${{ steps.date.outputs.date }}
